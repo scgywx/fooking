@@ -1,0 +1,94 @@
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Chat Client</title>
+</head>
+<body>
+<h1 class="title">Chat Client</h1>
+<div id="msg" style="width:800px;height:600px;border:1px solid #000;overflow-y:scroll;overflow-x:hidden">
+
+</div>
+<div style="width:800px;height:30px;margin-top:10px;text-align:right">
+<input type="text" style="width:800px;" size="20" id="text">
+</div>
+<div style="width:800px;height:30px;margin-top:10px;text-align:right">
+Nickname:<input type="text" style="width:100px;" readonly size="5" id="name" value="<?php echo $name;?>">
+<input type="button" style="width:80px;" onclick="sendMsg()" value="sendAll">
+<input type="button" style="width:80px;" onclick="sendGroup()" value="sendGroup">
+<input type="button" style="width:80px;" onclick="joinGroup()" value="joinGroup">
+<input type="button" style="width:80px;" onclick="leaveGroup()" value="leaveGroup">
+</div>
+<div style="width:0px;height:0px;overflow:hidden">
+<object type="application/x-shockwave-flash" id="Chat" data="Chat.swf" width="100" height="100">
+<param name="menu" value="false">
+<param name="scale" value="noScale">
+<param name="allowFullscreen" value="true">
+<param name="allowScriptAccess" value="always">
+<param name="bgcolor" value="">
+<param name="flashvars" value="server=192.168.75.131&port=9001&handler=flashevent">
+<param name="wmode" value="direct">
+</object>
+</div>
+<script language="javascript">
+var flashObj = document.getElementById('Chat');
+document.getElementById('name').value = getRandName();
+
+function flashevent(event, data)
+{
+	console.log(event + ">>>" + data);
+	if(event == "message"){
+		var obj = document.getElementById("msg");
+		var ele = document.createElement("h1");
+		ele.innerHTML = data;
+		obj.appendChild(ele);
+		obj.scrollTop = obj.scrollHeight;
+	}
+}
+
+function getRandName()
+{
+	var chars = ['0','1','2','3','4','5','6','7','8','9'];
+	var ret = 'guest';
+	for(var i = 0; i < 4 ; i++) {
+         var id = Math.ceil(Math.random() * 9);
+         ret+= chars[id];
+    }
+	return ret;
+}
+
+function joinGroup()
+{
+	flashObj.sendMsg('{"type":"join","name":"test"}');
+}
+
+function leaveGroup()
+{
+	flashObj.sendMsg('{"type":"leave","name":"test"}');
+}
+
+function sendMsg()
+{
+	var name = document.getElementById('name').value;
+	var text = document.getElementById('text').value;
+	if(text == ''){
+		alert('text is empty');
+		return ;
+	}
+	flashObj.sendMsg('{"type":"msg","name":"' + name + '","text":"' + text + '"}');
+	document.getElementById('text').value = "";
+}
+
+function sendGroup()
+{
+	var name = document.getElementById('name').value;
+	var text = document.getElementById('text').value;
+	if(text == ''){
+		alert('text is empty');
+		return ;
+	}
+	flashObj.sendMsg('{"type":"group","name":"' + name + '","text":"' + text + '"}');
+	document.getElementById('text').value = "";
+}
+</script>
+</body>
+</html>

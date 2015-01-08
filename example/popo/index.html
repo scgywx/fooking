@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Popo Client</title>
+<style type="text/css">
+*{font-size:13px;}
+#bg{position:relative;width:800px;height:600px;background-image:url('bg.png');overflow:hidden}
+#map{position:absolute;width:600px;height:520px;margin-left:20px;margin-top:42px;background-image:url('map.jpg')}
+#msglist{position:absolute;left:648px;top:70px;width:145px;height:370px;overflow:hidden}
+#msglist .text{color:#FFF;margin-top:5px;background:#003E91;border:1px solid #0680D3;width:140px;line-height:20px}
+#msginput{position:absolute;width:130px;height:140px;left:652px;top:475px}
+#msgsend{position:absolute;left:648px;top:562px}
+.role{position:absolute;width:48px;height:64px;background-image:url('Role1.png')}
+.name{width:48px;height:15px;line-height:15px;text-align:center;margin-top:-10px;color:#FFF}
+.hp{width:48px;height:15px;background:#ff0000}
+.popo{position:absolute;width:99px;height:83px;background-image:url('boom.png')}
+</style>
+<script language="javascript" src="http://www.oschina.net/js/2012/jquery-1.7.1.min.js?t=1377425776000"></script>
+</head>
+<body>
+<h1 class="title">Popo Client</h1>
+<p>fooking: <a href="http://git.oschina.net/scgywx/fooking" target="_blank">http://git.oschina.net/scgywx/fooking</a></p>
+<p>泡泡简介：<a href="http://my.oschina.net/scgywx/blog/356071" target="_blank">http://my.oschina.net/scgywx/blog/356071</a></p>
+<p>感谢刘德华提供美术支持</p>
+<p>上下左右移动，空格放泡，名字背景黑色表示死亡(不能放泡，移动和聊天不受影响，刷新页面恢复)
+<div id="bg">
+	<div id="map"></div>
+	<div id="msglist">
+	</div>
+	<div id="msginput"><textarea id="msgtext" style="width:130px;height:70px"></textarea></div>
+	<div id="msgsend"><a href="javascript:void();"><img src="send.jpg"></a></div>
+</div>
+<div style="width:0px;height:0px;overflow:hidden">
+<object type="application/x-shockwave-flash" id="Chat" data="Chat.swf" width="100" height="100">
+<param name="menu" value="false">
+<param name="scale" value="noScale">
+<param name="allowFullscreen" value="true">
+<param name="allowScriptAccess" value="always">
+<param name="bgcolor" value="">
+<param name="flashvars" value="server=192.168.56.1&port=9001&handler=flashevent">
+<param name="wmode" value="direct">
+</object>
+</div>
+
+<script language="javascript">
+var D_UP = 1;
+var D_DOWN = 2;
+var D_LEFT = 3;
+var D_RIGHT = 4;
+
+var POP_MOVE = 1;
+var POP_BOOM = 2;
+var POP_HIDE = 3;
+
+var BOX_WIDTH = 600;
+var BOX_HEIGHT = 520;
+
+var DELAY_TIME = 25;//ms
+
+var OFFSET_X = 8;
+var OFFSET_Y = 24;
+
+var flashObj = document.getElementById('Chat');
+var roles = {};
+var popos = {};
+var myid = '';
+var myname = '';
+var connected = false;
+
+$(function(){
+	//keydown event
+	$(document).keydown(function(event){
+		if(!myid || !roles[myid]){
+			return ;
+		}
+		
+		var r = roles[myid];
+		if(!r.running){
+			r.delay = r.animDelay;
+		}
+		
+		var dr = 0;
+		var keyCode = event.which;  
+		switch(keyCode){
+			case 37://left
+				dr = D_LEFT;
+				break;
+			case 38://up
+				dr = D_UP;
+				break;
+			case 39://right
+				dr = D_RIGHT;
+				break;
+			case 40://down
+				dr = D_DOWN;
+				break;
+			case 32://space
+				if(r.die){
+					return false;
+				}
+				flashObj.sendMsg(JSON.stringify({
+					type: 'popo',
+					role: myid,
+					dir: r.dir,
+					x: r.x,
+					y: r.y
+				}));
+				break;
+		}
+		
+		if(dr && !r.dirOps[dr]){
+			console.log('start:' + r.dir);
+			r.dir = dr;
+			r.running = true;
+			r.dirOps[dr] = true;
+			flashObj.sendMsg(JSON.stringify({
+				type: 'start',
+				id: myid,
+				dir: dr,
+				x: r.x,
+				y: r.y,
+				action : r.action
+			}));
+		}
+	});
+
+	//keyup event
+	$(document).keyup(function(event){
+		if(!myid || !roles[myid]){
+			return ;
+		}
+		
+		var r = roles[myid];
+		var dr = 0;
+		var keyCode = event.which;
+		switch(keyCode){
+			case 37://left
+				dr = D_LEFT;
+				break;
+			case 38://up
+				dr = D_UP;
+				break;
+			case 39://right
+				dr = D_RIGHT;
+				break;
+			case 40://down
+				dr = D_DOWN;
+				break;
+		}
+		if(dr){
+			r.dirOps[dr] = false;
+			if(r.dirOps[D_LEFT]){
+				r.dir = D_LEFT;
+			}else if(r.dirOps[D_RIGHT]){
+				r.dir = D_RIGHT;
+			}else if(r.dirOps[D_UP]){
+				r.dir = D_UP;
+			}else if(r.dirOps[D_DOWN]){
+				r.dir = D_DOWN;
+			}else{
+				r.running = false;
+				console.log("stop move");
+			}
+			
+			if(r.running){
+				flashObj.sendMsg(JSON.stringify({
+					type: 'start',
+					id: myid,
+					dir: r.dir,
+					x: r.x,
+					y: r.y,
+					action : r.action
+				}));
+			}else{
+				flashObj.sendMsg(JSON.stringify({
+					type: 'stop',
+					id: myid,
+					x: r.x,
+					y: r.y,
+					action : r.action
+				}));
+			}
+		}
+	});
+	
+	$('#msgsend a').click(function(){
+		var text = $('#msginput textarea').val();
+		flashObj.sendMsg(JSON.stringify({
+			type: 'message',
+			id: myid,
+			name: myname,
+			text: text
+		}));
+		$('#msginput textarea').val('');
+	});
+
+	//render
+	setInterval(function(){
+		for(var k in roles){
+			var r = roles[k];
+			if(!r.running) continue;
+			
+			switch(r.dir){
+				case D_LEFT:
+					r.x-= r.speed;
+					break;
+				case D_RIGHT:
+					r.x+= r.speed;
+					break;
+				case D_UP:
+					r.y-= r.speed;
+					break;
+				case D_DOWN:
+					r.y+= r.speed;
+					break;
+			}
+			
+			if(r.x < 0 - OFFSET_X){
+				r.x = -OFFSET_X;
+			}else if(r.x + r.width > BOX_WIDTH + OFFSET_X){
+				r.x = BOX_WIDTH - r.width + OFFSET_X;
+			}
+			
+			if(r.y < 0 - OFFSET_Y){
+				r.y = -OFFSET_Y;
+			}else if(r.y + r.height > BOX_HEIGHT){
+				r.y = BOX_HEIGHT - r.height;
+			}
+			
+			r.delay-= DELAY_TIME;
+			if(r.delay <= 0){
+				if(++r.action > 5) r.action = 0;
+				r.delay = r.animDelay;
+			}
+			
+			r.render();
+		}
+		
+		for(var k in popos){
+			var p = popos[k];
+			if(p.status == POP_MOVE){
+				switch(p.dir){
+					case D_LEFT:
+						p.x-= p.speed;
+						break;
+					case D_RIGHT:
+						p.x+= p.speed;
+						break;
+					case D_UP:
+						p.y-= p.speed;
+						break;
+					case D_DOWN:
+						p.y+= p.speed;
+						break;
+				}
+				p.render();
+				
+				//检测是否碰撞到角色(只有发炮人才有控制权)
+				var boom = false;
+				if(p.role == myid){
+					for(var i in roles){
+						var r = roles[i];
+						
+						if(!r || r.id == myid || r.die){
+							continue;
+						}
+						
+						if(checkRectIntersect(parseFloat(r.x) + r.width / 2, parseFloat(r.y) + r.height / 2, p.x + p.width / 2, p.y + p.height / 2)){
+							boom = true;
+							flashObj.sendMsg(JSON.stringify({
+								type: 'boom',
+								from: p.role,
+								target: r.id,
+								id: p.id,
+								x: p.x,
+								y: p.y
+							}));
+							break;
+						}
+					}
+				}
+				
+				//是否出界
+				var cx = p.x + p.width / 2;
+				var cy = p.y + p.height / 2;
+				if(!boom && (cx <= 22 || cx + 22 >= BOX_WIDTH || cy <= 20 || cy + 20 >= BOX_HEIGHT)){
+					p.boom();
+				}
+			}else if(p.status == POP_BOOM){
+				p.delay-= DELAY_TIME;
+				if(p.delay <= 0){
+					if(p.action >= 6){
+						p.status = POP_HIDE;
+					}else{
+						p.render();
+						p.action++;
+						p.delay = p.animDelay;
+					}
+				}
+			}else if(p.status == POP_HIDE){
+				delete popos[p.id];
+				p.remove();
+			}
+		}
+	}, DELAY_TIME);
+});
+
+function Role(id, name, x, y, isDie)
+{
+	var self = this;
+	
+	this.id = id;
+	this.name = name;
+	this.obj = null;
+	this.x = parseFloat(x);
+	this.y = parseFloat(y);
+	this.running = false;
+	this.dir = D_DOWN;
+	this.action = 0;
+	this.speed = 100 / 40;
+	this.width = 48;
+	this.height = 64;
+	this.animDelay = 100;
+	this.delay = 0;
+	this.dirOps = {};
+	this.die = isDie ? true : false;
+	this.hp = 100;
+	
+	this.render = function(){
+		self.obj.css('left', self.x);
+		self.obj.css('top', self.y);
+		self.obj.css('background-position', ((self.action * 48)) + 'px -' + ((self.dir - 1) * 64) + 'px');
+		if(self.die){
+			self.obj.find('.name').css('background', '#000');
+		}
+	}
+	
+	this.remove = function(){
+		self.obj.remove();
+	}
+	
+	$('#map').append('<div id="role-' + this.id +'" class="role"><div class="name">' + this.name + '</div></div>');
+	
+	this.obj = $('#role-' + this.id);
+}
+
+function Popo(id, role, dir, x, y)
+{
+	var self = this;
+	
+	this.id = id;
+	this.role = role;
+	this.obj = null;
+	this.speed = 200 / 40;
+	this.width = 99;
+	this.height = 83;
+	this.popoWidth = 44;
+	this.popoHeight = 41;
+	this.dir = dir;
+	this.x = x;
+	this.y = y;
+	this.startX = x;
+	this.startY = y;
+	this.status = POP_MOVE;
+	this.action = 0;
+	this.animDelay = 50;
+	this.delay = 0;
+	
+	this.render = function(){
+		if(self.status == POP_MOVE){
+			self.obj.css('left', self.x);
+			self.obj.css('top', self.y);
+		}else if(self.status == POP_BOOM){
+			self.obj.css('background-position', '-' + (self.action * 99) + 'px 0px');
+		}
+	}
+	
+	this.remove = function(){
+		self.obj.remove();
+	}
+	
+	this.boom = function(){
+		self.status = POP_BOOM;
+		self.action = 1;
+		self.delay = self.animDelay;
+		self.obj.css('background-position', '0px 0px');
+	}
+	
+	$('#map').append('<div id="popo-' + this.id +'" class="popo"></div>');
+	
+	this.obj = $('#popo-' + this.id);
+}
+
+function flashevent(event, data)
+{
+	console.log(event + ">>>" + data);
+	if(event == 'connect'){//conntcted
+		connected = true;
+		flashObj.sendMsg(JSON.stringify({
+			type: 'join',
+			name: getRandName()
+		}));
+	}else if(event == 'message'){//message
+		var msg = JSON.parse(data);
+		if(msg.type == "start"){//开始移动
+			if(msg.id != myid){
+				var r = roles[msg.id];
+				r.dir = msg.dir;
+				r.running = true;
+				r.x = msg.x;
+				r.y = msg.y;
+				r.action = msg.action;
+				r.render();
+			}
+		}else if(msg.type == 'stop'){
+			if(msg.id != myid){
+				console.log("stop move");
+				var r = roles[msg.id];
+				r.x = msg.x;
+				r.y = msg.y;
+				r.running = false;
+				r.action = msg.action;
+				r.render();
+			}
+		}else if(msg.type == 'joinok'){
+			myid = msg.id;
+			myname = msg.name;
+		}else if(msg.type == 'join'){
+			var r = new Role(msg.id, msg.name, msg.x, msg.y, msg.die);
+			r.render();
+			roles[r.id] = r;
+		}else if(msg.type == 'leave'){
+			var r = roles[msg.id];
+			if(r){
+				r.remove();
+				delete roles[msg.id];
+			}
+		}else if(msg.type == 'popo'){
+			var pop = new Popo(msg.id, msg.role, msg.dir, msg.x - 22, msg.y - 21);
+			pop.render();
+			popos[msg.id] = pop;
+		}else if(msg.type == 'boom'){
+			var from = roles[msg.from];
+			var target = roles[msg.target];
+			var p = popos[msg.id];
+			if(target){
+				target.hp-= 10;
+				if(target.hp <= 0){
+					target.die = true;
+					
+					if(from.id == myid){
+						flashObj.sendMsg(JSON.stringify({
+							type: 'kill',
+							id: target.id
+						}));
+					}
+				}
+				target.render();
+			}
+			if(p){
+				p.boom();
+			}
+		}else if(msg.type == 'message'){
+			var html = '<div class="text">' + msg.name + ': ' + msg.text + '</div>';
+			$('#msglist').append(html);
+			$('#msglist').scrollTop($('#msglist')[0].scrollHeight);
+		}
+	}else if(event == 'close'){
+		alert('connect close');
+	}
+}
+
+function getRandName()
+{
+	var chars = ['0','1','2','3','4','5','6','7','8','9'];
+	var ret = 'p';
+	for(var i = 0; i < 4 ; i++) {
+         var id = Math.ceil(Math.random() * 9);
+         ret+= chars[id];
+    }
+	return ret;
+}
+
+function checkRectIntersect(x1, y1, x2, y2)
+{
+	var width = Math.abs(x1 - x2);
+	var height = Math.abs(y1 - y2);
+	
+	if(width * width + height * height <= 30 * 30){
+		return true;
+	}
+	
+	return false;
+}
+</script>
+</body>
+</html>
