@@ -52,8 +52,4 @@ request/response模式下不需要router干预,仅仅是gateway与backend(php-fp
 
 #example
 已做了个简单的聊天室，位于example/chat  
-使用方法：  
-1、使用nginx或者apache将目录指向example/chat目录，并修改index.html的服务器IP与端口(需要访问index.html和chat.swf)   
-2、运行python flash.py(flash的安全沙箱，因为客户端是使用flash socket)   
-3、配置router.lua和config.lua，然后启动router和gateway   
-4、访问localhost/index.html
+详细说明请见：http://my.oschina.net/scgywx/blog/394925
