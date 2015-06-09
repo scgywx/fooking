@@ -3,6 +3,7 @@
 #include <set>
 #include <string>
 #include <vector>
+#include "fooking.h"
 #include "Process.h"
 #include "EventLoop.h"
 #include "Buffer.h"
@@ -47,17 +48,18 @@ typedef struct{
 	ChannelSet	channels;//订阅的频道
 }GatewayInfo;
 
-class Master;
 class Router:
 	public Object
 {
 public:
 	typedef hash_map<Connection*, std::string>	SessionGroup;
 public:
-	Router(Master *master);
+	Router(int argc, char **argv);
 	~Router();
 public:
 	void start();
+	static RouterMsg unpackMsg(void *ptr);
+	static void packMsg(void *ptr, uint_16 type, uint_16 slen, int len);
 private:
 	void onConnection(int fd, int ev, void *data);
 	void onMessage(Connection *conn);
@@ -78,7 +80,8 @@ private:
 	void doChannelUnSub(Connection *conn, RouterMsg *pMsg);
 	void doInfo(Connection *conn, RouterMsg *pMsg);
 private:
-	Master*				pMaster;
+	int					nArgc;
+	char**				pArgv;
 	EventLoop*			pEventLoop;
 	Server*				pServer;
 	SessionList			allSessions;//所有连接

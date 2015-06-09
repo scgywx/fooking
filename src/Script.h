@@ -1,8 +1,8 @@
 #pragma once
 #include <string>
-#include "Common.h"
-#include "Object.h"
+#include "fooking.h"
 #include "Buffer.h"
+#include "Connection.h"
 
 extern "C"{
 #include <lua.h>
@@ -20,15 +20,19 @@ public:
 	~Script();
 public:
 	bool			load(std::string &filename);
-	int				procInput(Buffer *input, Buffer *output);
-	int				procOutput(Buffer *input, Buffer *output);
-private:
-	void			regLib();
-	static int		luaBufferData(lua_State *L);
-	static int		luaBufferSize(lua_State *L);
-	static int		luaBufferAppend(lua_State *L);
-	static int		luaBufferSeek(lua_State *L);
+	bool			hasConnectProc(){ return bhConnect;}
+	bool			hasInputProc(){ return bhInput;}
+	bool			hasOutputProc(){ return bhOutput;}
+	bool			hasCloseProc(){ return bhClose;}
+	int				procConnect(Connection *conn);
+	int				procInput(Connection *conn, int requestid, Buffer *input, Buffer *output);
+	int				procOutput(Connection *conn, int requestid, Buffer *input, Buffer *output);
+	int				procClose(Connection *conn);
 private:
 	lua_State*		pState;
+	bool			bhConnect;
+	bool			bhInput;
+	bool			bhOutput;
+	bool			bhClose;
 };
 NS_END

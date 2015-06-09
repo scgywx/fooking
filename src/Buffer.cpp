@@ -55,6 +55,10 @@ Buffer::~Buffer()
 
 size_t Buffer::append(const char *buf, size_t len)
 {
+	if(!len){
+		return nLength;
+	}
+	
 	size_t tailFree = nTotal - nOffset - nLength;
 	if(tailFree < len){
 		if(tailFree + nOffset >= len){

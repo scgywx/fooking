@@ -5,7 +5,7 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <unistd.h>
-#include "Common.h"
+#include "fooking.h"
 
 NS_BEGIN
 
@@ -15,21 +15,32 @@ NS_BEGIN
 #define LOG_LEVEL_INFO		2
 #define LOG_LEVEL_DEBUG		3
 
-#define LOG(_fmt, ...)		Log::write(LOG_LEVEL_DEBUG, _fmt, ##__VA_ARGS__)
-#define LOG_INFO(_fmt, ...)	Log::write(LOG_LEVEL_INFO, _fmt, ##__VA_ARGS__)
-#define LOG_ERR(_fmt, ...)	Log::write(LOG_LEVEL_ERROR, _fmt, ##__VA_ARGS__)
+#define LOG(_fmt, ...)		Log::getInstance()->write(LOG_LEVEL_DEBUG, _fmt, ##__VA_ARGS__)
+#define LOG_INFO(_fmt, ...)	Log::getInstance()->write(LOG_LEVEL_INFO, _fmt, ##__VA_ARGS__)
+#define LOG_ERR(_fmt, ...)	Log::getInstance()->write(LOG_LEVEL_ERROR, _fmt, ##__VA_ARGS__)
 
-class Log
+class Log:
+	public Object
 {
 private:
-	Log(){}
+	Log():
+		nfd(-1),
+		nlv(0){}
 public:
-	static void init(int lv, int fd);
-	static bool init(int lv, const char *file);
-	static void write(int level, const char *fmt, ...);
+	static Log* getInstance(){
+		if(!psObj){
+			psObj = new Log();
+		}
+		return psObj;
+	}
+	void init(int lv, int fd);
+	bool init(int lv, const char *file);
+	void write(int level, const char *fmt, ...);
 private:
-	static int g_logfd;
-	static int g_loglv;
+	int nfd;
+	int nlv;
+private:
+	static Log*	psObj;
 };
 
 NS_END

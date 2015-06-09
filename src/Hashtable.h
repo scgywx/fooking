@@ -1,7 +1,9 @@
 #pragma once
 #include <string>
 #include <ext/hash_map>
+#include "fooking.h"
 #include "Connection.h"
+#include "Backend.h"
 
 using namespace __gnu_cxx;
 
@@ -32,6 +34,15 @@ namespace __gnu_cxx
 		size_t operator()(NS_NAME::Connection* const &p) const
 		{
 			return generic_hash_func((const unsigned char*)&p, sizeof(NS_NAME::Connection*));
+		}
+	};
+	
+	template<>
+	struct hash<NS_NAME::Backend*>
+	{
+		size_t operator()(NS_NAME::Backend* const &p) const
+		{
+			return generic_hash_func((const unsigned char*)&p, sizeof(NS_NAME::Backend*));
 		}
 	};
 }

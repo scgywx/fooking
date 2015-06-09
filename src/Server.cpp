@@ -16,18 +16,11 @@ Server::~Server()
 {
 }
 
-void Server::initSocket()
-{
-	sSocket.setNonBlock();
-}
-
 int Server::createTcpServer(int port)
 {
 	if(sSocket.create(AF_INET) == SOCKET_ERR){
 		return -1;
 	}
-	
-	sSocket.setReuseAddr();
 
 	//listen
 	struct sockaddr_in sa;
@@ -40,7 +33,8 @@ int Server::createTcpServer(int port)
 		return -1;
 	}
 	
-	initSocket();
+	//set nonblock
+	sSocket.setNonBlock();
 
 	return 0;
 }
@@ -53,8 +47,6 @@ int Server::createUnixServer(const char *path)
 	if(sSocket.create(AF_LOCAL) == SOCKET_ERR){
 		return -1;
 	}
-	
-	sSocket.setReuseAddr();
 
 	//listen
 	struct sockaddr_un sa;
@@ -66,13 +58,12 @@ int Server::createUnixServer(const char *path)
 		return -1;
 	}
 	
-	initSocket();
+	//set nonblock
+	sSocket.setNonBlock();
 
     return 0;
 #endif
 }
-
-
 
 void Server::start()
 {
@@ -90,7 +81,7 @@ void Server::onConnection(int fd, int ev, void *data)
 	int len = sizeof(sa);
 	int conn = sSocket.accept((sockaddr *)&sa, &len);
 	if(conn == SOCKET_ERR){
-		LOG("accept fail, errno=%d, error=%s", errno, strerror(errno));
+		LOG_ERR("accept fail, errno=%d, error=%s", errno, strerror(errno));
 		return ;
 	}
 	

@@ -1,5 +1,5 @@
 ﻿#pragma once
-#include "Common.h"
+#include "fooking.h"
 #include "Log.h"
 
 #ifdef WIN32
@@ -30,12 +30,13 @@ NS_BEGIN
 class Socket
 {
 public:
-	Socket():nSocket(INVALID_SOCKET){}
+	Socket():nSocket(INVALID_SOCKET), nError(0){}
 	Socket(int fd):nSocket(fd){}
 	~Socket(){}
 public:
 	int getFd(){ return nSocket; }
-	int isValid(){ return nSocket != INVALID_SOCKET;}
+	int isValid(){ return nSocket >= 0;}
+	int getError(){ return nError; }
 	int create(int domain);
 	int close();
 	int listen(struct sockaddr *sa, int len);
@@ -50,6 +51,7 @@ public:
 	int setKeepAlive();
 private:
 	int nSocket;
+	int nError;
 };
 
 NS_END

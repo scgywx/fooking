@@ -1,6 +1,5 @@
 #pragma once
-#include "Common.h"
-#include "Object.h"
+#include "fooking.h"
 
 NS_BEGIN
 

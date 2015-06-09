@@ -8,7 +8,12 @@ int Socket::create(int domain)
 	if(nSocket == -1){
 		return SOCKET_ERR;
 	}
-
+	
+	if(setReuseAddr() == SOCKET_ERR){
+		close();
+		return SOCKET_ERR;
+	}
+	
 	return SOCKET_OK;
 }
 
@@ -68,6 +73,7 @@ int Socket::connectTcp(const char *host, short port, int isNonBlock)
 	if(connect(nSocket, (struct sockaddr *)(&s_add), sizeof(struct sockaddr)) == -1){
 		if(errno != EINPROGRESS){
 			close();
+			nError = errno;
 			return SOCKET_ERR;
 		}
 	}
@@ -93,6 +99,7 @@ int Socket::connectUnix(const char *path, int isNonBlock)
 	if(connect(nSocket, (struct sockaddr*)&sa, sizeof(sa)) == -1) {
 		if(errno != EINPROGRESS){
 			close();
+			nError = errno;
 			return SOCKET_ERR;
 		}
 	}
@@ -107,8 +114,10 @@ int Socket::read(char *buffer, int len)
 		if(errno == EAGAIN){
 			return 0;
 		}
+		nError = errno;
 		return SOCKET_ERR;
 	}else if(nread == 0){
+		nError = 0;
 		return SOCKET_ERR;
 	}
 
@@ -119,8 +128,14 @@ int Socket::write(const char *buffer, int len)
 {
 	int nwrote = ::write(nSocket, buffer, len);
 	if(nwrote == -1){
+		if(errno == EAGAIN){
+			return 0;
+		}
+		
+		nError = errno;
 		return SOCKET_ERR;
 	}else if(nwrote == 0){
+		nError = 0;
 		return SOCKET_ERR;
 	}
 

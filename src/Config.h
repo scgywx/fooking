@@ -1,8 +1,7 @@
 #pragma once
 #include <vector>
 #include <string>
-#include "Common.h"
-#include "Object.h"
+#include "fooking.h"
 #include "Hashtable.h"
 
 extern "C"{
@@ -26,10 +25,17 @@ typedef hash_map<std::string, std::string> FastcgiParams;
 class Config:
 	public Object
 {
-public:
+private:
 	Config();
 	~Config();
 public:
+	static Config* getInstance()
+	{
+		if(!psObj){
+			psObj = new Config();
+		}
+		return psObj;
+	}
 	bool				load(const char *filename);
 private:
 	int 				readInt(const char *key);
@@ -38,7 +44,9 @@ private:
 	bool 				addBackendServer(const char *str, int weight);
 private:
 	lua_State*			pState;
+	static Config*		psObj;
 public:
+	std::string			sFile;//log文件名
 	std::string			sHost;//服务器IP
 	short				nPort;//服务器端口
 	bool				bDaemonize;//是否守护进行

@@ -2,9 +2,10 @@
 #include <stdlib.h>
 #include <iostream>
 #include "Config.h"
-#include "Utils.h"
 
 NS_USING;
+
+Config* Config::psObj = NULL;
 
 Config::Config():
 	pState(NULL)
@@ -19,13 +20,14 @@ Config::~Config()
 
 bool Config::load(const char *filename)
 {
-	pState = lua_open();
+	pState = luaL_newstate();
 	if(luaL_dofile(pState, filename)){
 		printf("parse config file error=%s\n", lua_tostring(pState, -1));
 		return false;
 	}
 	
 	//basic option
+	sFile = filename;//file
 	sHost = readString("HOST");//host
 	nPort = readInt("PORT");//port
 	bDaemonize = readBoolean("DAEMONIZE");
@@ -143,7 +145,7 @@ bool Config::load(const char *filename)
 
 bool Config::addBackendServer(const char *str, int weight)
 {
-	SocketOption opt = Utils::parseSocket(str);
+	SocketOption opt = utils::parseSocket(str);
 	BackendOption backend;
 	switch(opt.type){
 		case SOCKET_TCP:

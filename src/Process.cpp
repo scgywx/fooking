@@ -67,15 +67,15 @@ bool Process::start()
 
 int Process::send(ChannelMsg *ch)
 {
-    struct iovec	iov[1];
-    struct msghdr	msg;
+	struct iovec	iov[1];
+	struct msghdr	msg;
 	
 	union {
 		struct cmsghdr	cm;
 		char			space[CMSG_SPACE(sizeof(int))];
-    } cmsg;
+	} cmsg;
 
-    if (ch->fd > 0) {
+	if (ch->fd > 0) {
 		msg.msg_control = (caddr_t) &cmsg;
 		msg.msg_controllen = sizeof(cmsg);
 
@@ -83,19 +83,19 @@ int Process::send(ChannelMsg *ch)
 		cmsg.cm.cmsg_level = SOL_SOCKET;
 		cmsg.cm.cmsg_type = SCM_RIGHTS;
 		*((int*)CMSG_DATA(&cmsg.cm)) = ch->fd;
-    } else {
+	} else {
 		msg.msg_control = NULL;
 		msg.msg_controllen = 0;
-    }
+	}
 
 	iov[0].iov_base = (char *) ch;
-    iov[0].iov_len = sizeof(ChannelMsg);
+	iov[0].iov_len = sizeof(ChannelMsg);
 
 	msg.msg_flags = 0;
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 1;
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 1;
 
 	int n = ::sendmsg(nPipefd, &msg, 0);
 	if (n == -1) {
@@ -112,25 +112,25 @@ int Process::send(ChannelMsg *ch)
 
 int Process::recv(ChannelMsg *ch)
 {
-    struct iovec	iov[1];
-    struct msghdr	msg;
+	struct iovec	iov[1];
+	struct msghdr	msg;
 
-    union {
-        struct cmsghdr  cm;
-        char            space[CMSG_SPACE(sizeof(int))];
-    } cmsg;
+	union {
+		struct cmsghdr  cm;
+		char            space[CMSG_SPACE(sizeof(int))];
+	} cmsg;
 
-    iov[0].iov_base = (char *)ch;
-    iov[0].iov_len = sizeof(ChannelMsg);
+	iov[0].iov_base = (char *)ch;
+	iov[0].iov_len = sizeof(ChannelMsg);
 
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-    msg.msg_iov = iov;
-    msg.msg_iovlen = 1;
-    msg.msg_control = (caddr_t) &cmsg;
-    msg.msg_controllen = sizeof(cmsg);
+	msg.msg_name = NULL;
+	msg.msg_namelen = 0;
+	msg.msg_iov = iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = (caddr_t) &cmsg;
+	msg.msg_controllen = sizeof(cmsg);
 
-    int n = ::recvmsg(nPipefd, &msg, 0);
+	int n = ::recvmsg(nPipefd, &msg, 0);
 	if (n == -1) {
 		if (errno == EAGAIN) {
 			return EAGAIN;
@@ -144,7 +144,7 @@ int Process::recv(ChannelMsg *ch)
 
 	if ((size_t)n < sizeof(ChannelMsg)) {
 		LOG_ERR("recvmsg() returned not enough data: %d", n);
-        return -1;
+		return -1;
 	}
 
 	if (ch->type == CH_PIPE) {
@@ -167,5 +167,5 @@ int Process::recv(ChannelMsg *ch)
 		LOG_ERR("recvmsg() truncated data");
 	}
 
-    return 0;
+	return 0;
 }

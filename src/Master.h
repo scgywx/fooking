@@ -3,12 +3,12 @@
 #include <list>
 #include <vector>
 #include <string>
-#include "Object.h"
+#include "fooking.h"
 #include "EventLoop.h"
 #include "Server.h"
 #include "Worker.h"
 #include "Atomic.h"
-#include "Config.h"
+#include "Script.h"
 
 #define LockAcceptMutex(lock, val) atomic_cmp_set(lock, 0, val)
 #define UnLockAcceptMutex(lock, val) atomic_cmp_set(lock, val, 0)
@@ -21,36 +21,36 @@ typedef struct{
 	int			workerClients[0];
 }GlobalData;
 
-
-
 class Master:
 	public Object
 {
-private:
-	Master();
+public:
+	Master(int argc, char **argv);
 	~Master();
 public:
-	void 			start(int argc, char **argv);
-	static Master*	getInstance();
-	void			setProcTitle(const char *title);
+	void 			start();
+	void			addClient(int id)
+	{
+		pGlobals->workerClients[id]++;
+		atomic_fetch_add(&pGlobals->clients, 1);
+	}
+	void			delClient(int id)
+	{
+		pGlobals->workerClients[id]--;
+		atomic_fetch_sub(&pGlobals->clients, 1);
+	}
 private:
-	void			daemonize();
 	bool			createGlobals();
 	void			releaseGlobals();
 	void 			setupSignal();
 	static void 	procSignal(int sig);
-	void			initProcTitle();
 public:
 	int				nArgc;
 	char**			pArgv;
 	Server*			pServer;
 	Worker**		pWorkers;
-	Config*			pConfig;
 	Script*			pScript;
 	GlobalData*		pGlobals;
-	std::string		sConfigFile;//配置文件
-	bool			bAcceptLock;
-	//单例?
-	static Master*	pInstance;
+	bool			bUseAcceptMutex;
 };
 NS_END

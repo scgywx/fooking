@@ -1,5 +1,5 @@
 #pragma once
-#include "Common.h"
+#include "fooking.h"
 #include "EventLoop.h"
 #include "Socket.h"
 
@@ -15,14 +15,13 @@ public:
 	int 				createUnixServer(const char *path);
 	void				start();
 	void				stop();
-	void 				setConnectionHandler(const IOEventHandler &cb){ cbConnection = cb;}
+	void 				setConnectionHandler(const IOHandler &cb){ cbConnection = cb;}
 	Socket&				getSocket(){ return sSocket;}
 private:
-	void				initSocket();
 	void 				onConnection(int fd, int ev, void *data);
 private:	
 	EventLoop*			pLoop;
 	Socket				sSocket;
-	IOEventHandler		cbConnection;
+	IOHandler			cbConnection;
 };
 NS_END

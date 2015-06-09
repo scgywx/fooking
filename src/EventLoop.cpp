@@ -6,37 +6,19 @@
 
 NS_USING;
 
-static void GetTime(long *seconds, long *milliseconds)
+static Timestamp GetTime()
 {
 	struct timeval tv;
-
 	gettimeofday(&tv, NULL);
-	*seconds = tv.tv_sec;
-	*milliseconds = tv.tv_usec/1000;
-}
-
-static void AddMillisecondsToNow(long long milliseconds, long *sec, long *ms)
-{
-	long cur_sec, cur_ms, when_sec, when_ms;
-
-	GetTime(&cur_sec, &cur_ms);
-	when_sec = cur_sec + milliseconds/1000;
-	when_ms = cur_ms + milliseconds%1000;
-	if (when_ms >= 1000) {
-		when_sec ++;
-		when_ms -= 1000;
-	}
-	*sec = when_sec;
-	*ms = when_ms;
+	Timestamp tm = (Timestamp)tv.tv_sec * 1000000 + tv.tv_usec;
+	return tm;
 }
 
 EventLoop::EventLoop():
 	nSize(10240),
 	nMaxfd(-1),
+	nMaxWaitTime(0),
 	bRunning(false),
-	nTimerNextId(0),
-	nLastTime(time(NULL)),
-	pTimerHead(NULL),
 	pTickHead(NULL),
 	pTickTail(NULL),
 	pBeforeData(NULL)
@@ -89,9 +71,9 @@ void EventLoop::run()
 	{
 		EV_INVOKE(cbBefore, pBeforeData);
 		procTickEvent();
-        procIoEvent();
+		procIoEvent();
 		procTimerEvent();
-    }
+	}
 }
 
 void EventLoop::stop()
@@ -100,11 +82,10 @@ void EventLoop::stop()
 }
 
 //io event listener
-void EventLoop::addEventListener(int fd, int event, const IOEventHandler &cb, void *data)
+void EventLoop::addEventListener(int fd, int event, const IOHandler &cb, void *data)
 {
-	if (fd >= nSize) {
-		resize(fd);
-	}
+	if(fd < 0) return;
+	if(fd >= nSize) resize(fd);
 
 	IOEvent *ev = pEvents + fd;
 	if(pPoll->add(fd, event) == -1){
@@ -122,7 +103,8 @@ void EventLoop::addEventListener(int fd, int event, const IOEventHandler &cb, vo
 
 void EventLoop::removeEventListener(int fd, int event)
 {
-	if (fd >= nSize) return;
+	if(fd < 0) return;
+	if(fd >= nSize) return;
 
 	IOEvent *ev = pEvents + fd;
 	if (ev->mask == EV_IO_NONE) return;
@@ -131,82 +113,66 @@ void EventLoop::removeEventListener(int fd, int event)
 	pPoll->del(fd, event);
 }
 
-long long EventLoop::setTimer(int milliseconds, const TimerEventHandler &cb, void *data)
+TimerId EventLoop::setTimer(unsigned int milliseconds, const TimerHandler &cb, void *data)
 {
-	long long id = ++nTimerNextId;
+	TimerId id = GetTime() + milliseconds * 1000;
 	TimerEvent *te = (TimerEvent*)zmalloc(sizeof(TimerEvent));
 	if(te == NULL) return EV_ERROR;
 
 	te->id = id;
-	te->handler = cb;
+	te->cb = cb;
 	te->data = data;
 	te->milliseconds = milliseconds;
-	te->next = pTimerHead;
-	AddMillisecondsToNow(milliseconds, &te->when_sec, &te->when_ms);
 	
-	pTimerHead = te;
+	arrTimers.insert(TimerList::value_type(id, te));
 	
 	return id;
 }
 
-void EventLoop::stopTimer(long long id)
+void EventLoop::stopTimer(TimerId id)
 {
-	TimerEvent *prev = NULL;
-	TimerEvent *te = pTimerHead;
-	while(te) {
-		if (te->id == id) {
-			if (prev == NULL)
-				pTimerHead = te->next;
-			else
-				prev->next = te->next;
-			zfree(te);
-			return ;
-		}
-		prev = te;
-		te = te->next;
+	TimerList::iterator it = arrTimers.find(id);
+	if(it != arrTimers.end()){
+		zfree(it->second);
+		arrTimers.erase(it);
 	}
-}
-
-TimerEvent* EventLoop::searchNearestTimer()
-{
-	TimerEvent *te = pTimerHead;
-	TimerEvent *nearest = NULL;
-
-	while(te) {
-		if (!nearest || te->when_sec < nearest->when_sec ||
-			(te->when_sec == nearest->when_sec &&
-			te->when_ms < nearest->when_ms))
-		{
-			nearest = te;
-		}
-		te = te->next;
-	}
-	return nearest;
 }
 
 int EventLoop::procIoEvent()
 {
 	int processed = 0;
-	TimerEvent *shortest = searchNearestTimer();
-	struct timeval tv, *tvp;
-	if (shortest) {
-		long now_sec, now_ms;
-
-		/* Calculate the time missing for the nearest
-		 * timer to fire. */
-		GetTime(&now_sec, &now_ms);
+	
+	//timer
+	struct timeval tv, *tvp = NULL;
+	TimerList::const_iterator it = arrTimers.begin();
+	if(it != arrTimers.end()){
+		TimerEvent *te = it->second;
+		Timestamp now = GetTime();
 		tvp = &tv;
-		tvp->tv_sec = shortest->when_sec - now_sec;
-		if (shortest->when_ms < now_ms) {
-			tvp->tv_usec = ((shortest->when_ms+1000) - now_ms)*1000;
-			tvp->tv_sec --;
-		} else {
-			tvp->tv_usec = (shortest->when_ms - now_ms)*1000;
+		if(now >= te->id){
+			tvp->tv_sec = 0;
+			tvp->tv_usec = 0;
+		}else{
+			tvp->tv_sec = (te->id - now) / 1000000;
+			tvp->tv_usec = (te->id - now) % 1000000;
 		}
-		if (tvp->tv_sec < 0) tvp->tv_sec = 0;
-		if (tvp->tv_usec < 0) tvp->tv_usec = 0;
 	} else {
 		tvp = NULL; /* wait forever */
+	}
+	
+	if(nMaxWaitTime){
+		int sec = nMaxWaitTime / 1000;
+		int usec = nMaxWaitTime % 1000 * 1000;
+		if(tvp){
+			if(tvp->tv_sec > sec || (tvp->tv_sec == sec && tvp->tv_usec > usec)){
+				tvp->tv_sec = sec;
+				tvp->tv_usec = usec;
+			}
+		}else{
+			tv.tv_sec = sec;
+			tv.tv_usec = usec;
+			tvp = &tv;
+		}
 	}
 
 	//poll
@@ -226,41 +192,25 @@ int EventLoop::procIoEvent()
 		processed++;
 	}
 	
-    return processed;
+	return processed;
 }
 
 int EventLoop::procTimerEvent()
 {
 	int processed = 0;
-	TimerEvent *te;
-	time_t now = time(NULL);
-
-	if(now < nLastTime){
-		te = pTimerHead;
-		while(te){
-			te->when_sec = 0;
-			te = te->next;
-		}
-	}
-
-	nLastTime = now;
-	te = pTimerHead;
-	while(te){
-		long now_sec, now_ms;
-		long long id;
-
-		GetTime(&now_sec, &now_ms);
-		if (now_sec > te->when_sec || 
-			(now_sec == te->when_sec && now_ms >= te->when_ms))
-		{
-			id = te->id;
-			TimerEvent *next = te->next;
-			AddMillisecondsToNow(te->milliseconds, &te->when_sec, &te->when_ms);
-			EV_INVOKE(te->handler, id, te->data);
+	Timestamp now = GetTime();
+	
+	for(TimerList::iterator it = arrTimers.begin();
+		it != arrTimers.end();)
+	{
+		TimerEvent *te = it->second;
+		if(te->id < now){
+			arrTimers.erase(it++);
+			EV_INVOKE(te->cb, te->id, te->data);
 			processed++;
-			te = next;
+			zfree(te);
 		}else{
-			te = te->next;
+			it++;
 		}
 	}
 
@@ -275,7 +225,7 @@ void EventLoop::nextTick(const EventHandler &cb, void *data)
 		return ;
 	}
 	
-	tick->handler = cb;
+	tick->cb = cb;
 	tick->data = data;
 	tick->next = NULL;
 	
@@ -293,7 +243,7 @@ int EventLoop::procTickEvent()
 	int n = 0;
 	while(tick){
 		TickEvent *next = tick->next;
-		EV_INVOKE(tick->handler, tick->data);
+		EV_INVOKE(tick->cb, tick->data);
 		zfree(tick);
 		tick = next;
 		n++;

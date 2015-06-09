@@ -8,21 +8,16 @@ NS_USING;
 
 uint_16 Session::snMachine;
 
-Session::Session():
-	nPid(0),
-	nMachine(0),
-	nFd(0)
-{
-	memset(sId, 0, SID_FULL_LEN);
-}
-
 Session::Session(uint_16 pid, uint_16 fd):
 	nPid(pid),
 	nMachine(snMachine),
 	nFd(fd)
 {
-	time(&nTime);
-	sprintf(sId, "%08x%04x%04x%04x", static_cast<unsigned int>(nTime), nMachine, nPid, nFd);
+	time_t t;
+	time(&t);
+	nTime = static_cast<uint_32>(t);
+	
+	sprintf(sId, "%08x%04x%04x%04x", nTime, nMachine, nPid, nFd);
 	sId[SID_LENGTH] = '\0';
 }
 
@@ -52,18 +47,6 @@ Session::Session(const char *sid)
 	//fd
 	memcpy(sfd, sid + 16, 4);
 	nFd = strtol(sfd, NULL, 16);
-}
-
-bool Session::operator==(const Session&r) const
-{
-	if(r.nTime == nTime && 
-		r.nMachine == nMachine &&
-		r.nPid == nPid &&
-		r.nFd == nFd)
-	{
-		return true;
-	}
-	return false;
 }
 
 void Session::init()

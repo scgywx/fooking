@@ -2,13 +2,33 @@
 #include "Router.h"
 #include "Socket.h"
 #include "Log.h"
-#include "Utils.h"
-#include "Master.h"
+#include "Config.h"
 
 NS_USING;
 
-Router::Router(Master *master):
-	pMaster(master),
+RouterMsg Router::unpackMsg(void *ptr)
+{
+	RouterMsg *pMsg = (RouterMsg*)ptr;
+	RouterMsg msg;
+	
+	msg.type = net::readNetInt16((char*)&pMsg->type);
+	msg.slen = net::readNetInt16((char*)&pMsg->slen);
+	msg.len = net::readNetInt32((char*)&pMsg->len);
+	
+	return msg;
+}
+
+void Router::packMsg(void *ptr, uint_16 type, uint_16 slen, int len)
+{
+	RouterMsg *pMsg = (RouterMsg*)ptr;
+	net::writeNetInt16((char*)&pMsg->type, type);
+	net::writeNetInt16((char*)&pMsg->slen, slen);
+	net::writeNetInt32((char*)&pMsg->len, len);
+}
+
+Router::Router(int argc, char **argv):
+	nArgc(argc),
+	pArgv(argv),
 	pEventLoop(NULL)
 {
 }
@@ -61,9 +81,7 @@ void Router::onClose(Connection *conn)
 void Router::sendHead(Connection *conn, uint_16 type, uint_16 slen, int len)
 {
 	RouterMsg msg;
-	writeNetInt16((char*)&msg.type, type);
-	writeNetInt16((char*)&msg.slen, slen);
-	writeNetInt32((char*)&msg.len, len);
+	packMsg(&msg, type, slen, len);
 	conn->send((char*)&msg, ROUTER_HEAD_SIZE);
 }
 
@@ -75,13 +93,14 @@ void Router::getSessionGroups(SessionGroup &groups, int slen, char *sptr)
 		std::string sid(sptr + pos, SID_LENGTH);
 		pos+= SID_LENGTH;
 		
-		Connection *gate = allSessions[sid];
-		if(!gate){
+		SessionList::const_iterator it = allSessions.find(sid);
+		if(it != allSessions.end()){
+			Connection *gate = it->second;
+			groups[gate].append(sid);
+		}else{
 			LOG("gate not found by sid=%s", sid.c_str());
 			continue;
 		}
-		
-		groups[gate].append(sid);
 	}
 }
 
@@ -94,14 +113,15 @@ void Router::onMessage(Connection *conn)
 			return ;
 		}
 		
-		RouterMsg *pMsg = (RouterMsg*)pBuffer->data();
-		pMsg->type = readNetInt16((char*)&pMsg->type);
-		pMsg->slen = readNetInt16((char*)&pMsg->slen);
-		pMsg->len = readNetInt32((char*)&pMsg->len);
-		if(pBuffer->size() < ROUTER_HEAD_SIZE + pMsg->slen + pMsg->len){
+		RouterMsg msg = unpackMsg(pBuffer->data());
+		if(pBuffer->size() < ROUTER_HEAD_SIZE + msg.slen + msg.len){
 			return ;
 		}
 		
+		RouterMsg *pMsg = (RouterMsg*)pBuffer->data();
+		pMsg->type = msg.type;
+		pMsg->slen = msg.slen;
+		pMsg->len = msg.len;
 		LOG("on data, type=%d, slen=%d, len=%d", pMsg->type, pMsg->slen, pMsg->len);
 		
 		switch(pMsg->type){
@@ -153,7 +173,7 @@ void Router::onMessage(Connection *conn)
 void Router::doAuth(Connection *conn, RouterMsg *pMsg)
 {
 	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
-	int serverid = readNetInt32(pMsg->data);
+	int serverid = net::readNetInt32(pMsg->data);
 	pInfo->serverid = serverid;
 	pInfo->isauth = true;
 	
@@ -339,8 +359,8 @@ void Router::doInfo(Connection *conn, RouterMsg *pMsg)
 		}
 		
 		char line[8];
-		writeNetInt32(line, pInfo->serverid);
-		writeNetInt32(line + sizeof(int), pInfo->sessions.size());
+		net::writeNetInt32(line, pInfo->serverid);
+		net::writeNetInt32(line + sizeof(int), pInfo->sessions.size());
 		body.append(line, sizeof(line));
 		
 		ngate++;
@@ -348,8 +368,8 @@ void Router::doInfo(Connection *conn, RouterMsg *pMsg)
 	
 	//头信息,网关数量与客户端数量
 	char head[8];
-	writeNetInt32(head, allSessions.size());
-	writeNetInt32(head + sizeof(int), ngate);
+	net::writeNetInt32(head, allSessions.size());
+	net::writeNetInt32(head + sizeof(int), ngate);
 	
 	//发送消息
 	sendHead(conn, ROUTER_MSG_INFO, 0, sizeof(head) + body.size());
@@ -364,13 +384,21 @@ void Router::start()
 	pEventLoop = new EventLoop();
 	
 	//create Router server
-	short port = pMaster->pConfig->nPort;
+	Config *pConfig = Config::getInstance();
 	pServer = new Server(pEventLoop);
 	pServer->setConnectionHandler(EV_IO_CB(this, Router::onConnection));
-	pServer->createTcpServer(port);
+	if(pServer->createTcpServer(pConfig->nPort) != 0){
+		LOG("create router server failed, errno=%d, error=%s", errno, strerror(errno));
+		return;
+	}
+	
+	//set title
+	char title[256];
+	snprintf(title, 256, "fooking router server, %s", pConfig->sFile.c_str());
+	utils::setProcTitle(title);
+
+	//start
+	LOG("router server started, listening port=%d", pConfig->nPort);
 	pServer->start();
-	
-	LOG("router server started, listening port=%d", port);
-	
 	pEventLoop->run();
 }

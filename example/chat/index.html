@@ -1,93 +1,197 @@
-<html lang="en">
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
 <head>
 <meta charset="utf-8">
 <title>Chat Client</title>
+<style type="text/css">
+*{padding:0px;margin:0px}
+body,html,input{font:12px 宋体,Verdana,Arial,Tahoma;}
+ul,ol,li{list-style:none;}
+a{text-decoration:none;}
+a:hover{text-decoration:none;}
+em{font-style:normal;}
+body{background:url('http://vr3.6rooms.com/imges/room/skin_bg/mod90_v1.jpg')}
+.clear{clear:both}
+.box{margin:50px auto;width:800px;height:600px;opacity: 0.9}
+.list{width:150px;height:600px;float:left;background:#e8e8e8;overflow-y: scroll;}
+.list ul li{display:block;height:30px;line-height:30px;padding:5px;background:#e8e8e8;border-bottom:1px solid #d4d4d4}
+.list ul li:hover{background:#f0f0f0}
+.right{position: relative;margin-left:10px;width:640px;height:600px;float:left}
+.menu{height:35px;}
+.menu a{float:left;width:100px;height:35px;background:#79797A;color:#FFF;text-align:center;line-height:35px;margin-right:1px}
+.menu a.on{background:#e8e8e8;font-weight:bold;color:#333}
+.msg{width:640px;height:515px;background:#e8e8e8;overflow-y: scroll;}
+.msg ul{padding:10px}
+.msg ul li{line-height:35px;}
+.msg ul li span{color:#CCC}
+.msg ul li em{color:#f09}
+.input{width:640px;height:40px;background:#e8e8e8;margin-top:10px}
+.input .text{margin:4px;width:550px;height:20px;padding:5px;border:1px solid #CCC;outline:none;float:left;}
+.input .send{margin:4px 0px;float:left;width:64px;height:30px;line-height:30px;border:1px solid #CCC;outline:none}
+.input .send:hover{background:#e8e8e8}
+.loginbg{position: fixed;top: 0;right: 0;bottom: 0;left: 0;z-index: 99998;background-color: #000;opacity: 0.75;filter: alpha(opacity=75);}
+.login{z-index:99999;width:400px;height:100px;background:#FFF;position:fixed;top:50%;left:50%;margin: -200px 0 0 -200px;}
+.login .text{height:20px;width:330px;margin:30px;border:1px solid #CCC;outline:none;padding:5px;}
+.join{cursor:pointer;width:200px;height:50px;text-align:center;line-height:50px;border:0;outline:0;background:#CC0000;
+	color:#FFF;position:absolute;left:200px;top:230px;transition: background-color 0.3s;}
+.join:hover{background:#f00000}
+</style>
 </head>
 <body>
-<h1 class="title">Chat Client</h1>
-<div id="msg" style="width:800px;height:600px;border:1px solid #000;overflow-y:scroll;overflow-x:hidden">
-
+<div class="loginbg"></div>
+<div class="login">
+	<input type="text" id="nickname" maxlength="12" placeholder="请填写昵称,按回车确认" class="text" />
 </div>
-<div style="width:800px;height:30px;margin-top:10px;text-align:right">
-<input type="text" style="width:800px;" size="20" id="text">
+<div class="box">
+	<div class="list">
+		<ul>
+		</ul>
+	</div>
+	<div class="right">
+		<input class="join" id="joinbtn" style="display:none" type="button" value="加入此频道" />
+		<div class="menu">
+			<a data-id="0" href="#" class="on">全体</a>
+			<a data-id="1" href="#">PHP</a>
+			<a data-id="2" href="#">C/C++</a>
+			<a data-id="3" href="#">游戏</a>
+			<a data-id="4" href="#">Web</a>
+			<a data-id="5" href="#">前端</a>
+		</div>
+		<div class="clear"></div>
+		<div class="msg" id="msg-0"><ul></ul></div>
+		<div class="msg" id="msg-1" style="display:none"><ul></ul></div>
+		<div class="msg" id="msg-2" style="display:none"><ul></ul></div>
+		<div class="msg" id="msg-3" style="display:none"><ul></ul></div>
+		<div class="msg" id="msg-4" style="display:none"><ul></ul></div>
+		<div class="msg" id="msg-5" style="display:none"><ul></ul></div>
+		<div class="input">
+			<input type="text" id="input" class="text" />
+			<input type="button" id="send" class="send" value="发言" />
+		</div>
+	</div>
 </div>
-<div style="width:800px;height:30px;margin-top:10px;text-align:right">
-Nickname:<input type="text" style="width:100px;" readonly size="5" id="name" value="<?php echo $name;?>">
-<input type="button" style="width:80px;" onclick="sendMsg()" value="sendAll">
-<input type="button" style="width:80px;" onclick="sendGroup()" value="sendGroup">
-<input type="button" style="width:80px;" onclick="joinGroup()" value="joinGroup">
-<input type="button" style="width:80px;" onclick="leaveGroup()" value="leaveGroup">
-</div>
-<div style="width:0px;height:0px;overflow:hidden">
-<object type="application/x-shockwave-flash" id="Chat" data="Chat.swf" width="100" height="100">
-<param name="menu" value="false">
-<param name="scale" value="noScale">
-<param name="allowFullscreen" value="true">
-<param name="allowScriptAccess" value="always">
-<param name="bgcolor" value="">
-<param name="flashvars" value="server=192.168.75.131&port=9001&handler=flashevent">
-<param name="wmode" value="direct">
-</object>
-</div>
+<script src="http://libs.baidu.com/jquery/1.9.0/jquery.js"></script>
 <script language="javascript">
-var flashObj = document.getElementById('Chat');
-document.getElementById('name').value = getRandName();
-
-function flashevent(event, data)
-{
-	console.log(event + ">>>" + data);
-	if(event == "message"){
-		var obj = document.getElementById("msg");
-		var ele = document.createElement("h1");
-		ele.innerHTML = data;
-		obj.appendChild(ele);
-		obj.scrollTop = obj.scrollHeight;
+var client = null;
+var channel = 0;
+var channels = {};
+$(function(){
+	$('#nickname').keydown(function(e){
+		if(e.keyCode == 13){
+			var name = $(this).val();
+			if(name == ""){
+				alert("昵称不能为空");
+				return false;
+			}
+			
+			login(name);
+		}
+	});
+	
+	$('#send').click(function(){
+		doSend();
+	});
+	
+	$('#input').keydown(function(e){
+		if(e.keyCode == 13){
+			doSend();
+		}
+	});
+	
+	$('#joinbtn').click(function(){
+		if(channel){
+			sendMsg({
+				type: 'join',
+				channel: channel
+			});
+			$('#joinbtn').hide();
+			channels[channel] = true;
+		}
+	});
+	
+	$('.menu a').click(function(){
+		channel = parseInt($(this).attr('data-id'));
+		$('.menu a').removeClass('on');
+		$(this).addClass('on');
+		$('.msg').hide();
+		$('#msg-' + channel).show();
+		if(channel && !channels[channel]){
+			$('#joinbtn').show();
+		}else{
+			$('#joinbtn').hide();
+		}
+		return false;
+	});
+	
+	function doSend()
+	{
+		var v = $('#input').val();
+		if(v == ''){
+			alert('内容不能为空');
+			return false;
+		}
+		sendMsg({
+			type: 'msg',
+			text: v,
+			channel: channel,
+		});
+		$('#input').val('');
 	}
+});
+
+function login(name)
+{
+	client = new WebSocket('ws://test:9001');
+	client.onopen = function(event) {
+		console.log("connected");
+		sendMsg({
+			type: 'login',
+			name: name
+		});
+		$('.loginbg').hide();
+		$('.login').hide();
+	};
+	
+	client.onmessage = function(event) { 
+		console.log('msg:',event);
+		var data = event.data;
+		var msg = data ? JSON.parse(data) : {};
+		if(msg.type == "msg"){
+			var en = '#msg-' + msg.channel;
+			var obj = $(en + ' ul');
+			obj.append('<li><em>'+msg.name+'</em><span>('+msg.time+')</span>: '+msg.text+'</li>');
+			$(en).scrollTop($(en)[0].scrollHeight);
+		}else if(msg.type == "login"){
+			var obj = $('#msg-0 ul');
+			$('.list ul').append('<li id="list-' + msg.id + '">' + msg.name + '</li>');
+			obj.append('<li><em>'+msg.name+'</em> 进入了房间</li>');
+			$('#msg-0').scrollTop($('#msg-0')[0].scrollHeight);
+		}else if(msg.type == 'list'){
+			for(var x in msg.list){
+				var u = msg.list[x];
+				$('.list ul').append('<li id="list-' + u.id + '">' + u.name + '</li>');
+			}
+		}else if(msg.type == "close"){
+			var obj = $('#msg-0 ul');
+			$('#list-'+msg.id).remove();
+			obj.append('<li><em>'+msg.name+'</em> 离开了房间</li>');
+			$('#msg-0').scrollTop($('#msg-0')[0].scrollHeight);
+		}
+	};
+	
+	client.onclose = function(event) { 
+		console.log('close:',event); 
+	};
+	
+	client.onerror = function(event) { 
+		console.log('error:',event); 
+	};
 }
 
-function getRandName()
+function sendMsg(data)
 {
-	var chars = ['0','1','2','3','4','5','6','7','8','9'];
-	var ret = 'guest';
-	for(var i = 0; i < 4 ; i++) {
-         var id = Math.ceil(Math.random() * 9);
-         ret+= chars[id];
-    }
-	return ret;
-}
-
-function joinGroup()
-{
-	flashObj.sendMsg('{"type":"join","name":"test"}');
-}
-
-function leaveGroup()
-{
-	flashObj.sendMsg('{"type":"leave","name":"test"}');
-}
-
-function sendMsg()
-{
-	var name = document.getElementById('name').value;
-	var text = document.getElementById('text').value;
-	if(text == ''){
-		alert('text is empty');
-		return ;
-	}
-	flashObj.sendMsg('{"type":"msg","name":"' + name + '","text":"' + text + '"}');
-	document.getElementById('text').value = "";
-}
-
-function sendGroup()
-{
-	var name = document.getElementById('name').value;
-	var text = document.getElementById('text').value;
-	if(text == ''){
-		alert('text is empty');
-		return ;
-	}
-	flashObj.sendMsg('{"type":"group","name":"' + name + '","text":"' + text + '"}');
-	document.getElementById('text').value = "";
+	console.log(data);
+	client.send(JSON.stringify(data));
 }
 </script>
 </body>

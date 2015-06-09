@@ -1,5 +1,5 @@
 #pragma once
-#include "Common.h"
+#include "fooking.h"
 #include "EventLoop.h"
 #include "Socket.h"
 #include "Buffer.h"
@@ -20,32 +20,39 @@ public:
 	void			close();
 	Socket&			getSocket(){ return sSocket;}
 	Buffer*			getBuffer(){return &readBuffer;}
-	void			setMessageHandler(const EventHandler &cb){ cbReadHandler = cb;}
-	void			setCloseHandler(const EventHandler &cb){ cbCloseHandler = cb;}
-	void			setConnectHandler(const EventHandler &cb){ cbConnectHandler = cb;}
-	void			setWriteCompleteHandler(const EventHandler &cb){ cbWriteCompleteHandler = cb;}
+	void			setMessageHandler(const EventHandler &cb){ cbRead = cb;}
+	void			setCloseHandler(const EventHandler &cb){ cbClose = cb;}
+	void			setConnectHandler(const EventHandler &cb){ cbConnect = cb;}
+	void			setWriteCompleteHandler(const EventHandler &cb){ cbWriteComplete = cb;}
+	void			setTimeout(int msec){nTimeout = msec;}
 	void			setData(void *data){ pData = data;}
 	void*			getData() const{ return pData;}
-	void			setIPAndPort(const char *ip, short port);
+	void			setHostAndPort(const char *host, short port);
+	int				getError(){ return nError;}
 private:
+	void			initSocket();
+	void			initConnectEvent();
 	void			onConnect(int fd, int r, void *data);
 	void			onRead(int fd, int r, void *data);
 	void			onWrite(int fd, int r, void *data);
-	void			onClose();
+	void			onTimeout(TimerId id, void *data);
 private:
 	EventLoop*		pEventLoop;
 	Socket			sSocket;
 	Buffer			writeBuffer;
 	Buffer			readBuffer;
 	bool			bWriting;
-	EventHandler	cbReadHandler;
-	EventHandler	cbCloseHandler;
-	EventHandler	cbConnectHandler;
-	EventHandler	cbWriteCompleteHandler;
+	bool			bClosed;
+	EventHandler	cbRead;
+	EventHandler	cbClose;
+	EventHandler	cbConnect;
+	EventHandler	cbWriteComplete;
 	void*			pData;
-	bool			bShutdown;
-	char			sIP[16];
+	char			sHost[16];
 	short			nPort;
+	int				nTimeout;
+	TimerId			nTimerId;
+	int				nError;
 };
 
 NS_END

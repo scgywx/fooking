@@ -7,13 +7,12 @@
 
 NS_USING;
 
-int Log::g_logfd = -1;
-int Log::g_loglv = 0;
+Log* Log::psObj = NULL;
 
 void Log::init(int lv, int fd)
 {
-	g_logfd = fd;
-	g_loglv = lv;
+	nfd = fd;
+	nlv = lv;
 }
 
 bool Log::init(int lv, const char *file)
@@ -27,8 +26,8 @@ bool Log::init(int lv, const char *file)
 		return false;
 	}
 	
-	g_logfd = fd;
-	g_loglv = lv;
+	nfd = fd;
+	nlv = lv;
 	
 	return true;
 }
@@ -40,11 +39,11 @@ void Log::write(int level, const char *fmt, ...)
 	char msg[LOG_BUFFER_SIZE];
 	char buf[LOG_BUFFER_SIZE];
 	
-	if(g_logfd < 0){
+	if(nfd < 0){
 		return ;
 	}
 	
-	if(level > g_loglv){
+	if(level > nlv){
 		return ;
 	}
 
@@ -55,7 +54,7 @@ void Log::write(int level, const char *fmt, ...)
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct tm *t = localtime(&tv.tv_sec);
-	int n = sprintf(buf, "%d-%02d-%02d %02d:%02d:%02d.%06d [%s][%d] %s\n", 
+	int n = sprintf(buf, "%d-%02d-%02d %02d:%02d:%02d.%06ld [%s][%d] %s\n", 
 			t->tm_year + 1900,
 			t->tm_mon + 1,
 			t->tm_mday,
@@ -67,5 +66,5 @@ void Log::write(int level, const char *fmt, ...)
 			getpid(),
 			msg);
 
-	::write(g_logfd, buf, n);
+	::write(nfd, buf, n);
 }

@@ -2,13 +2,11 @@
 #include <signal.h>
 #include "Worker.h"
 #include "Socket.h"
-#include "Buffer.h"
-#include "Log.h"
 #include "Master.h"
-#include "Session.h"
 #include "Router.h"
-#include "Utils.h"
 #include "Atomic.h"
+#include "Log.h"
+#include "Config.h"
 
 NS_USING;
 
@@ -17,35 +15,35 @@ Worker::Worker(Master *master, int id):
 	pMaster(master),
 	pEventLoop(NULL),
 	nRouterReconnect(0),
-	nRouterDelay(0)
+	bHeldAcceptLock(false)
 {
-	pProtocol = new ProtocolFastcgi();
+	//TODO
 }
 
 Worker::~Worker()
 {
 	delete pEventLoop;
-	delete pProtocol;
 }
 
-void Worker::createClient(int fd, const char *ip, int port)
+void Worker::createClient(int fd, const char *host, int port)
 {
 	//创建session对像
 	Session sess(nPid, fd);
-	LOG("new client, fd=%d, ip=%s, port=%d, sid=%s", fd, ip, port, sess.getId());
+	LOG("new client, fd=%d, host=%s, port=%d, sid=%s", fd, host, port, sess.getId());
 	
-	//辅助数据
+	//环镜变量
 	ClientData *pData = new ClientData();
 	char szPort[8];
 	int nPort = sprintf(szPort, "%d", port);
 	pData->session = sess;
-	pProtocol->makeParam(pData->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, ip, strlen(ip));
-	pProtocol->makeParam(pData->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
-	pProtocol->makeParam(pData->params, "SESSIONID", sizeof("SESSIONID") - 1, sess.getId(), SID_LENGTH);
+	pData->nrequest = 0;
+	Backend::makeParam(pData->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, host, strlen(host));
+	Backend::makeParam(pData->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
+	Backend::makeParam(pData->params, "SESSIONID", sizeof("SESSIONID") - 1, sess.getId(), SID_LENGTH);
 	
 	//创建连接对像
 	Connection *client = new Connection(pEventLoop, fd);
-	client->setIPAndPort(ip, port);
+	client->setHostAndPort(host, port);
 	client->setData(pData);
 	client->setMessageHandler(EV_CB(this, Worker::onMessage));
 	client->setCloseHandler(EV_CB(this, Worker::onClose));
@@ -54,17 +52,29 @@ void Worker::createClient(int fd, const char *ip, int port)
 	arrClients[sess.getId()] = client;
 	
 	//计数更新
-	pMaster->pGlobals->workerClients[nId]++;
-	atomic_fetch_add(&pMaster->pGlobals->clients, 1);
+	pMaster->addClient(nId);
 	
 	//Router通知
 	sendToRouter(ROUTER_MSG_CONN, SID_LENGTH, sess.getId(), 0, NULL);
 	
 	//backend通知
-	if(pMaster->pConfig->bEventConnect){
-		Buffer *pParams = new Buffer(pData->params);
-		pProtocol->makeParam(*pParams, "EVENT", sizeof("EVENT") - 1, "1", 1);
-		createBackendRequest(client, NULL, pParams, true);
+	Config *pConfig = Config::getInstance();
+	if(pConfig->bEventConnect){
+		Backend *backend = new Backend(pEventLoop, client, NULL);
+		backend->copyParam(pData->params);
+		backend->addParam("EVENT", sizeof("EVENT") - 1, "1", 1);
+		backend->setCloseHandler(EV_CB(this, Worker::onBackendClose));
+		backend->setResponseHandler(EV_CB(this, Worker::onBackendResponse));
+		if(backend->run()){
+			pData->backends[backend] = 1;
+		}else{
+			delete backend;
+		}
+	}
+	
+	//lua通知
+	if(pMaster->pScript && pMaster->pScript->hasConnectProc()){
+		pMaster->pScript->procConnect(client);
 	}
 }
 
@@ -78,18 +88,23 @@ void Worker::closeClient(Connection *client)
 	sendToRouter(ROUTER_MSG_CLOSE, SID_LENGTH, pData->session.getId(), 0, NULL);
 	
 	//后端通知
-	if(pMaster->pConfig->bEventClose){
-		Buffer *pParams = new Buffer(pData->params);
-		pProtocol->makeParam(*pParams, "EVENT", sizeof("EVENT") - 1, "2", 1);
-		createBackendRequest(NULL, NULL, pParams, true);
+	Config *pConfig = Config::getInstance();
+	if(pConfig->bEventClose){
+		Backend *backend = new Backend(pEventLoop, NULL, NULL);
+		backend->copyParam(pData->params);
+		backend->addParam("EVENT", sizeof("EVENT") - 1, "2", 1);
+		backend->setCloseHandler(EV_CB(this, Worker::onBackendClose));
+		backend->setResponseHandler(EV_CB(this, Worker::onBackendResponse));
+		if(!backend->run()){
+			delete backend;
+		}
 	}
 	
 	//释放后端请求
 	for(BackendList::const_iterator it = pData->backends.begin(); it != pData->backends.end(); ++it){
-		Connection *backend = it->first;
-		BackendRequest *request = (BackendRequest*)backend->getData();
-		request->client = NULL;//大哥已死，小弟们自生自灭...
-		backend->close();
+		Backend *backend = it->first;
+		backend->setClient(NULL);
+		backend->shutdown();
 	}
 	
 	//取消频道订阅
@@ -107,10 +122,15 @@ void Worker::closeClient(Connection *client)
 	}
 	
 	//计数更新
-	pMaster->pGlobals->workerClients[nId]--;
-	atomic_fetch_sub(&pMaster->pGlobals->clients, 1);
+	pMaster->delClient(nId);
 	
+	//客户端列表更新
 	arrClients.erase(sid);
+	
+	//lua更新
+	if(pMaster->pScript && pMaster->pScript->hasCloseProc()){
+		pMaster->pScript->procClose(client);
+	}
 	
 	delete pData;
 	delete client;
@@ -120,9 +140,9 @@ void Worker::sendToRouter(uint_16 type, uint_16 slen, const char *sessptr, int l
 {
 	if(pRouter){
 		RouterMsg msg;
-		writeNetInt16((char*)&msg.type, type);
-		writeNetInt16((char*)&msg.slen, slen);
-		writeNetInt32((char*)&msg.len, len);
+		net::writeNetInt16((char*)&msg.type, type);
+		net::writeNetInt16((char*)&msg.slen, slen);
+		net::writeNetInt32((char*)&msg.len, len);
 		pRouter->send((char*)&msg, ROUTER_HEAD_SIZE);
 		if(slen){
 			pRouter->send(sessptr, slen);
@@ -133,32 +153,48 @@ void Worker::sendToRouter(uint_16 type, uint_16 slen, const char *sessptr, int l
 	}
 }
 
-#define SEND_TO_CLIENT_RAW(_dat, _len) \
-	char hdr[4];\
-	writeNetInt32(hdr, _len);\
-	conn->send(hdr, 4);\
-	if(_len) conn->send(_dat, _len)
+void Worker::sendToClientRaw(Connection *conn, const char *data, int len)
+{
+	if(len){
+		char hdr[4];
+		net::writeNetInt32(hdr, len);
+		conn->send(hdr, 4);
+		conn->send(data, len);
+	}
+}
+
+void Worker::sendToClientScript(Connection *conn, Buffer *msg)
+{
+	ClientData *pData = (ClientData*)conn->getData();
+	Buffer resp;
+	int ret = pMaster->pScript->procOutput(conn, pData->nrequest, msg, &resp);
+	if(ret > 0){
+		if(!resp.empty()){
+			conn->send(resp.data(), resp.size());
+		}
+	}else if(ret == 0){
+		if(!msg->empty()){
+			sendToClientRaw(conn, msg->data(), msg->size());
+		}
+	}
+}
+
+void Worker::sendToClient(Connection *conn, Buffer *msg)
+{
+	if(pMaster->pScript && pMaster->pScript->hasOutputProc()){
+		sendToClientScript(conn, msg);
+	}else if(!msg->empty()){
+		sendToClientRaw(conn, msg->data(), msg->size());
+	}
+}
 
 void Worker::sendToClient(Connection *conn, const char *data, int len)
 {
-	if(pMaster->pScript){
-		Buffer buff(data, len);
-		Buffer response;
-		int ret = pMaster->pScript->procOutput(&buff, &response);
-		if(ret > 0){
-			if(response.size()){
-				conn->send(response.data(), response.size());
-			}
-		}else if(ret == 0){
-			if(buff.size()){
-				SEND_TO_CLIENT_RAW(buff.data(), buff.size());
-			}
-		}else{
-			//Nothing TODO
-			//协议处理错误
-		}
-	}else{
-		SEND_TO_CLIENT_RAW(data, len);
+	if(pMaster->pScript && pMaster->pScript->hasOutputProc()){
+		Buffer msg(data, len);
+		sendToClientScript(conn, &msg);
+	}else if(len){
+		sendToClientRaw(conn, data, len);
 	}
 }
 
@@ -190,7 +226,8 @@ void Worker::onChannel(int fd, int ev, void *data)
 void Worker::onConnection(int fd, int ev, void *data)
 {
 	//check maxclients
-	if(pMaster->pGlobals->clients >= pMaster->pConfig->nMaxClients){
+	Config *pConfig = Config::getInstance();
+	if(pMaster->pGlobals->clients >= pConfig->nMaxClients){
 		LOG("Connection is full");
 		close(fd);
 		return ;
@@ -207,10 +244,11 @@ void Worker::onConnection(int fd, int ev, void *data)
 	createClient(fd, ip, port);
 	
 	//free accept lock
-	if(pMaster->bAcceptLock && 
+	if(pMaster->bUseAcceptMutex && 
 		UnLockAcceptMutex(&pMaster->pGlobals->lock, nPid))
 	{
-		LOG("unlock accept mutex");
+		//LOG("unlock accept mutex");
+		bHeldAcceptLock = false;
 		pServer->stop();
 	}
 }
@@ -230,159 +268,87 @@ void Worker::onMessage(Connection *client)
 	while(pBuffer->size())
 	{
 		bool proc = false;
-		Buffer *req = new Buffer();
+		Buffer *msg = new Buffer();
 		
 		//自定义协议处理
-		if(pMaster->pScript){
-			int ret = pMaster->pScript->procInput(pBuffer, req);
+		if(pMaster->pScript && pMaster->pScript->hasInputProc()){
+			int ret = pMaster->pScript->procInput(client, pData->nrequest, pBuffer, msg);
 			if(ret < 0){
-				delete req;
+				delete msg;
 				return ;
 			}else if(ret > 0){
 				proc = true;
 			}
 		}
 		
+		//原生协议处理
 		if(!proc){
+			//check head
 			size_t hdrSize = 4;
 			if(pBuffer->size() < hdrSize){
-				delete req;
+				LOG("message head not enough");
+				delete msg;
 				return ;
 			}
 			
-			size_t msgSize = readNetInt32(pBuffer->data());
+			//check body
+			size_t msgSize = net::readNetInt32(pBuffer->data());
 			if(pBuffer->size() < hdrSize + msgSize){
-				delete req;
+				LOG("message body size not enough, msgSize=%d, buffSize=%d", msgSize, pBuffer->size());
+				delete msg;
 				return ;
 			}
 			
-			req->append(pBuffer->data() + hdrSize, msgSize);
+			msg->append(pBuffer->data() + hdrSize, msgSize);
 			
 			pBuffer->seek(hdrSize + msgSize);
 		}
 	
-		LOG("process message, fd=%d, size=%d, proc=%d, len=%d", client->getSocket().getFd(), req->size(), proc, pBuffer->size());
+		pData->nrequest++;
+		LOG("process message, fd=%d, reqid=%d, proc=%d, buffer size=%d, msg len=%d", 
+			client->getSocket().getFd(), 
+			pData->nrequest,
+			proc, 
+			pBuffer->size(),
+			msg->size());
 	
 		//create request
-		Connection *backend = createBackendRequest(client, req, &pData->params);
-		if(backend){
-			pData->backends[backend] = 1;
-		}else{
-			LOG_ERR("not found backend server");
-		}
-	}
-}
-
-Connection* Worker::createBackendRequest(Connection *client, Buffer *request, Buffer *params, bool dParam)
-{
-	Connection *backend = NULL;
-	int r = Utils::randInt(1, pMaster->pConfig->nMaxBackendWeights);
-	int servers = pMaster->pConfig->arrBackendServer.size();
-	for(int i = 0; i < servers; ++i){
-		BackendOption &opt = pMaster->pConfig->arrBackendServer[i];
-		r-= opt.weight;
-		if(r <= 0 && (opt.type == SOCKET_TCP || opt.type == SOCKET_UNIX))
-		{
-			//创建连接
-			backend = new Connection(pEventLoop);
-			backend->setConnectHandler(EV_CB(this, Worker::onBackendConnect));
-			backend->setMessageHandler(EV_CB(this, Worker::onBackendMessage));
+		if(!msg->empty()){
+			Backend *backend = new Backend(pEventLoop, client, msg);
+			backend->copyParam(pData->params);
 			backend->setCloseHandler(EV_CB(this, Worker::onBackendClose));
-			if(opt.type == SOCKET_TCP){
-				LOG("backend connect to %s:%d", opt.host.c_str(), opt.port);
-				backend->connectTcp(opt.host.c_str(), opt.port);
+			backend->setResponseHandler(EV_CB(this, Worker::onBackendResponse));
+			if(backend->run()){
+				pData->backends[backend] = 1;
 			}else{
-				LOG("backend connect to unix:%s", opt.host.c_str());
-				backend->connectUnix(opt.host.c_str());
+				delete backend;
+				LOG_ERR("not found backend server");
 			}
-			
-			//创建请求
-			BackendRequest *pRequest = new BackendRequest();
-			pRequest->client = client;
-			pRequest->request = request;
-			pRequest->dParam = dParam;
-			pRequest->params = params;
-			pRequest->connected = false;
-			
-			//绑定请求
-			backend->setData(pRequest);
-			
-			//加入到超时列表
-			if(pMaster->pConfig->nBackendTimeout){
-				arrExpireBackends[backend] = pMaster->pConfig->nBackendTimeout;
-			}
-			
-			break;
-		}
-	}
-	
-	return backend;
-}
-
-void Worker::onBackendConnect(Connection *backend)
-{
-	LOG("backend connected, conn=%p", backend);
-	BackendRequest *pRequest = (BackendRequest*)backend->getData();
-	Buffer bkRequest;
-	const char *req = NULL;
-	size_t len = 0;
-	
-	pRequest->connected = true;
-	if(pRequest->request){
-		req = pRequest->request->data();
-		len = pRequest->request->size();
-	}
-	
-	pProtocol->pack(req, len, bkRequest, pRequest->params);
-	backend->send(bkRequest);
-	
-	arrExpireBackends.erase(backend);
-}
-
-void Worker::onBackendMessage(Connection *backend)
-{
-	LOG("backend data");
-	BackendRequest *pRequest = (BackendRequest*)backend->getData();
-	Buffer resp;
-	Buffer *pBuffer = backend->getBuffer();
-	int n = pProtocol->unpack(pBuffer->data(), pBuffer->size(), resp);
-	if(n > 0){
-		pBuffer->seek(n);
-		if(pRequest->client && resp.size()){
-			sendToClient(pRequest->client, resp.data(), resp.size());
 		}
 	}
 }
 
-void Worker::onBackendClose(Connection *backend)
+void Worker::onBackendResponse(Backend *backend)
+{
+	LOG("backend response");
+	Buffer &resp = backend->getResponse();
+	Connection *client = backend->getClient();
+	if(client && resp.size()){
+		sendToClient(client, &resp);
+	}
+}
+
+void Worker::onBackendClose(Backend *backend)
 {
 	LOG("backend close, conn=%p", backend);
-	BackendRequest *pRequest = (BackendRequest*)backend->getData();
-	Connection *pClient = pRequest->client;
-	if(pClient){
-		ClientData *pClientData = (ClientData*)pClient->getData();
+	
+	Connection *client = backend->getClient();
+	if(client){
+		ClientData *pClientData = (ClientData*)client->getData();
 		pClientData->backends.erase(backend);
 	}
 	
-	if(!pRequest->connected){
-		arrExpireBackends.erase(backend);
-	}
-	
-	if(pRequest->dParam){
-		delete pRequest->params;
-	}
-	
-	if(pRequest->request){
-		delete pRequest->request;
-	}
-	
-	delete pRequest;
 	delete backend;
-}
-
-void Worker::onBackendWriteComplete(Connection *backend)
-{
-	//LOG("backend write completed");
 }
 
 void Worker::onRouterMessage(Connection *router)
@@ -394,14 +360,15 @@ void Worker::onRouterMessage(Connection *router)
 			return ;
 		}
 		
-		RouterMsg *pMsg = (RouterMsg*)pBuffer->data();
-		pMsg->type = readNetInt16((char*)&pMsg->type);
-		pMsg->slen = readNetInt16((char*)&pMsg->slen);
-		pMsg->len = readNetInt32((char*)&pMsg->len);
-		if(pBuffer->size() < ROUTER_HEAD_SIZE + pMsg->slen + pMsg->len){
+		RouterMsg msg = Router::unpackMsg(pBuffer->data());
+		if(pBuffer->size() < ROUTER_HEAD_SIZE + msg.slen + msg.len){
 			return ;
 		}
 		
+		RouterMsg *pMsg = (RouterMsg*)pBuffer->data();
+		pMsg->type = msg.type;
+		pMsg->slen = msg.slen;
+		pMsg->len = msg.len;
 		LOG("on router data,type=%d, slen=%d, len=%d", pMsg->type, pMsg->slen, pMsg->len);
 		
 		switch(pMsg->type){
@@ -434,13 +401,24 @@ void Worker::onRouterMessage(Connection *router)
 
 void Worker::onRouterClose(Connection *router)
 {
-	LOG_ERR("router close");
+	int err = router->getError();
+	if(err){
+		LOG_ERR("router errno=%d, error=%s", err, strerror(err));
+	}else{
+		LOG_ERR("router close");
+	}
+	
 	delete pRouter;
 	pRouter = NULL;
 	
-	//下一次连接的时间
-	nRouterDelay = nRouterReconnect * 3;
-	nRouterReconnect++;
+	++nRouterReconnect;
+	LOG("reconnect router after %d seconds", nRouterReconnect * 3);
+	pEventLoop->setTimer(nRouterReconnect * 3000, EV_TIMER_CB(this, Worker::onRouterReconnect));
+}
+
+void Worker::onRouterReconnect(TimerId id, void *data)
+{
+	initRouter();
 }
 
 void Worker::onRouterConnect(Connection *router)
@@ -448,11 +426,11 @@ void Worker::onRouterConnect(Connection *router)
 	LOG_INFO("router connected");
 	
 	nRouterReconnect = 0;
-	nRouterDelay = 0;
 	
 	//AUTH
+	Config *pConfig = Config::getInstance();
 	char id[10];
-	writeNetInt32(id, pMaster->pConfig->nServerId);
+	net::writeNetInt32(id, pConfig->nServerId);
 	sendToRouter(ROUTER_MSG_AUTH, 0, NULL, sizeof(int), id);
 	
 	//sync session
@@ -481,9 +459,9 @@ void Worker::doKick(RouterMsg *pMsg)
 	{
 		std::string sid(pMsg->data + pos, SID_LENGTH);
 		LOG("kick user, sid=%s", sid.c_str());
-		
-		Connection *pClient = arrClients[sid];
-		if(pClient){
+		ClientList::const_iterator it = arrClients.find(sid);
+		if(it != arrClients.end()){
+			Connection *pClient = it->second;
 			pClient->close();
 		}
 		
@@ -497,8 +475,9 @@ void Worker::doSendMsg(RouterMsg *pMsg)
 	while(pos + SID_LENGTH <= pMsg->slen)
 	{
 		std::string sid(pMsg->data + pos, SID_LENGTH);
-		Connection *pClient = arrClients[sid];
-		if(pClient){
+		ClientList::const_iterator it = arrClients.find(sid);
+		if(it != arrClients.end()){
+			Connection *pClient = it->second;
 			LOG("send msg, sid=%s", sid.c_str());
 			sendToClient(pClient, pMsg->data + pMsg->slen, pMsg->len);
 		}else{
@@ -531,8 +510,9 @@ void Worker::doChannelAdd(RouterMsg *pMsg)
 	while(pos + SID_LENGTH <= pMsg->slen)
 	{
 		std::string sid(pMsg->data + pos, SID_LENGTH);
-		Connection *pClient = arrClients[sid];
-		if(pClient){
+		ClientList::const_iterator it = arrClients.find(sid);
+		if(it != arrClients.end()){
+			Connection *pClient = it->second;
 			ClientData *pClientData = (ClientData*)pClient->getData();
 			pClientData->channels[chname] = 1;
 			
@@ -557,8 +537,9 @@ void Worker::doChannelDel(RouterMsg *pMsg)
 	while(pos + SID_LENGTH <= pMsg->slen)
 	{
 		std::string sid(pMsg->data + pos, SID_LENGTH);
-		Connection *pClient = arrClients[sid];
-		if(pClient){
+		ClientList::const_iterator it = arrClients.find(sid);
+		if(it != arrClients.end()){
+			Connection *pClient = it->second;
 			ClientData *pClientData = (ClientData*)pClient->getData();
 			pClientData->channels.erase(chname);
 			
@@ -596,29 +577,22 @@ void Worker::doChannelPub(RouterMsg *pMsg)
 
 void Worker::loopBefore(void *data)
 {
-	if(pMaster->bAcceptLock && 
-		pMaster->pGlobals->workerClients[nId] < nPerWorkerAcceptMax &&
-		LockAcceptMutex(&pMaster->pGlobals->lock, nPid))
+	Config *pConfig = Config::getInstance();
+	if(pMaster->bUseAcceptMutex)
 	{
-		LOG("lock accept mutex");
-		pServer->start();
-	}
-}
-
-void Worker::onTimer(long long id, void *data)
-{
-	//router check
-	if(!pRouter && --nRouterDelay <= 0){
-		initRouter();
-	}
-	
-	//timeout check
-	for(BackendList::iterator it = arrExpireBackends.begin();
-		it != arrExpireBackends.end(); ++it)
-	{
-		if(--it->second <= 0){
-			LOG("backend timeout, conn=%p", it->first);
-			it->first->close();
+		if(bHeldAcceptLock && 
+			UnLockAcceptMutex(&pMaster->pGlobals->lock, nPid))
+		{
+			//LOG("unlock accept mutex");
+			bHeldAcceptLock = false;
+			pServer->stop();
+		}else if(!bHeldAcceptLock && 
+			pMaster->pGlobals->workerClients[nId] <= static_cast<int>(pMaster->pGlobals->clients * 1.125 / pConfig->nWorkers) &&
+			LockAcceptMutex(&pMaster->pGlobals->lock, nPid))
+		{
+			//LOG("lock accept mutex");
+			bHeldAcceptLock = true;
+			pServer->start();
 		}
 	}
 }
@@ -626,13 +600,16 @@ void Worker::onTimer(long long id, void *data)
 void Worker::initRouter()
 {
 	//connect router
+	Config *pConfig = Config::getInstance();
 	pRouter = new Connection(pEventLoop);
+	pRouter->setTimeout(3000);
 	pRouter->setConnectHandler(EV_CB(this, Worker::onRouterConnect));
 	pRouter->setMessageHandler(EV_CB(this, Worker::onRouterMessage));
 	pRouter->setCloseHandler(EV_CB(this, Worker::onRouterClose));
-	pRouter->connectTcp(pMaster->pConfig->sRouterHost.c_str(), pMaster->pConfig->nRouterPort);
+	pRouter->connectTcp(pConfig->sRouterHost.c_str(), pConfig->nRouterPort);
 	LOG_INFO("connect router server %s:%d", 
-		pMaster->pConfig->sRouterHost.c_str(), pMaster->pConfig->nRouterPort);
+		pConfig->sRouterHost.c_str(), 
+		pConfig->nRouterPort);
 }
 
 void Worker::proc()
@@ -642,26 +619,44 @@ void Worker::proc()
 	signal(SIGUSR1, NULL);
 
 	//set process title
-	pMaster->setProcTitle("fooking gateway worker");
-	
-	//每个worker最大允许的连接数
-	nPerWorkerAcceptMax = static_cast<int>(pMaster->pConfig->nMaxClients / pMaster->pConfig->nWorkers * 1.05);
+	Config *cfg = Config::getInstance();
+	char title[256];
+	snprintf(title, 256, "fooking gateway worker, %s", cfg->sFile.c_str());
+	utils::setProcTitle(title);
 	
 	//create loop
 	pEventLoop = new EventLoop();
-	pEventLoop->setTimer(1000, EV_TIMER_CB(this, Worker::onTimer), NULL);
+	pEventLoop->setMaxWaitTime(500);
 	pEventLoop->addEventListener(nPipefd, EV_IO_READ, EV_IO_CB(this, Worker::onChannel), NULL);
 	pEventLoop->setLoopBefore(EV_CB(this, Worker::loopBefore), NULL);
 	
 	//listen server
 	pServer = new Server(pEventLoop, pMaster->pServer->getSocket().getFd());
 	pServer->setConnectionHandler(EV_IO_CB(this, Worker::onConnection));
-	if(!pMaster->bAcceptLock){
+	if(!pMaster->bUseAcceptMutex){
 		pServer->start();
 	}
 	
 	//init router
 	initRouter();
+	
+	//backend env
+	char root[256];
+	char name[256];
+	int rootlen = sprintf(root, "%s/%s", cfg->sFastcgiRoot.c_str(), cfg->sFastcgiFile.c_str());
+	int namelen = sprintf(name, "/%s", cfg->sFastcgiFile.c_str()); 
+	Backend::addSharedParam("REQUEST_METHOD", strlen("REQUEST_METHOD"), "POST", strlen("POST"));
+	Backend::addSharedParam("SCRIPT_FILENAME", strlen("SCRIPT_FILENAME"), root, rootlen);
+	Backend::addSharedParam("SCRIPT_NAME", strlen("SCRIPT_NAME"), name, namelen);
+	Backend::addSharedParam("DOCUMENT_ROOT", strlen("DOCUMENT_ROOT"), cfg->sFastcgiRoot.c_str(), cfg->sFastcgiRoot.size());
+	
+	//backend env from config.lua
+	FastcgiParams::const_iterator it;
+	for(it = cfg->arFastcgiParams.begin(); it != cfg->arFastcgiParams.end(); ++it){
+		std::string k = it->first;
+		std::string v = it->second;
+		Backend::addSharedParam(k.c_str(), k.size(), v.c_str(), v.size());
+	}
 	
 	LOG("worker started, pipefd=%d", nPipefd);
 	pEventLoop->run();

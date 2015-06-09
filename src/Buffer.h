@@ -1,6 +1,6 @@
 #pragma once
 #include <string.h>
-#include "Common.h"
+#include "fooking.h"
 
 NS_BEGIN
 
@@ -17,10 +17,11 @@ public:
 public:
 	size_t append(const char *buf, size_t len);
 	size_t append(const char *buf){ return append(buf, strlen(buf)); }
-	size_t append(Buffer &buf){ return append(buf.data(), buf.size()); }
-	size_t append(Buffer *buf){ return append(buf->data(), buf->size()); }
-	size_t size() const{ return nLength;}
-	char *data(){ return pBuffer + nOffset;}
+	size_t append(const Buffer &buf){ return append(buf.data(), buf.size()); }
+	size_t append(const Buffer *buf){ return append(buf->data(), buf->size()); }
+	size_t size() const{ return nLength; }
+	bool empty() const{ return nLength == 0; }
+	char *data() const{ return pBuffer + nOffset;}
 	void clear(){ nLength = nOffset = 0;}
 	size_t seek(size_t n);
 private:

@@ -42,7 +42,7 @@ ROUTER_HOST = "127.0.0.1";
 ROUTER_PORT = 9010;
 
 --脚本
---SCRIPT_FILE = "script.lua";
+SCRIPT_FILE = "script.lua";
 
 --后端服务器列表
 BACKEND_TIMEOUT = 30;
