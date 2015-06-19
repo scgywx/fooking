@@ -1,23 +1,22 @@
-fooking is game gateway, read clients message transfer to backend(fpm request), then send message(fpm response) to clients.   
-it like nginx, so nginx + fpm = http server(php), fooking + fpm = socket server(php).   
+fooking is game gateway.It transfers client's requests to backend and send responses back with fpm protocol.
+Just like Nginx, as building a http server with nginx and fpm, you can create a socket server with fooking.    
 
-#features
-1 it's dynamic gateway server add.   
-2 unique sessionid for per client.   
+# features
+1 gateway server adding dynamicly.
+2 unique sessionid for each client.   
 3 group broadcast(like redis's pub/sub).   
 4 server status monitor.   
-5 client event notify(onconnect and onclose).   
-6 you can use any language(php, python, etc...).   
+5 client's event notify(onconnect and onclose).   
+6 all language support(php, python, etc...).   
 7 custom message protocol by lua.   
 
-#client protocol
-client protocol is client to fooking's message protocol, use header(bigend 4 bytes) + body,    
-but you can custom message protocol by lua.
+# client protocol
+client protocol is the protocol use in clients to fooking, build up with 4 bytes header in bigend and body,and you can custom protocol with lua. 
 
-#backend protocol
-backend protocol is fooking to backend's message protocol, it use fastcgi, so you can any languages.
+# backend protocol
+backend protocol is the protocol use in fooking to backends, you can use any luanguage with support fastcgi.
 
-#getting started
+# getting started
 step 1   
    git clone https://github.com/scgywx/fooking.git   
    cd {$FOOKING_PATH}   
@@ -28,5 +27,5 @@ step 2
 step 3   
    ./fooking config.lua   
 
-#arch
+# arch
 ![image](http://static.oschina.net/uploads/space/2014/1209/222447_G7Ft_140911.jpg)
