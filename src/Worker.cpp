@@ -227,7 +227,7 @@ void Worker::onConnection(int fd, int ev, void *data)
 {
 	//check maxclients
 	Config *pConfig = Config::getInstance();
-	if(pMaster->pGlobals->clients >= pConfig->nMaxClients){
+	if(pConfig->nMaxClients && pMaster->pGlobals->clients >= pConfig->nMaxClients){
 		LOG("Connection is full");
 		close(fd);
 		return ;
@@ -261,9 +261,17 @@ void Worker::onClose(Connection *client)
 void Worker::onMessage(Connection *client)
 {
 	Buffer *pBuffer = client->getBuffer();
+	Config *pConfig = Config::getInstance();
 	ClientData *pData = (ClientData*)client->getData();
 	
 	LOG("client message, fd=%d, len=%d", client->getSocket().getFd(), pBuffer->size());
+	
+	//check recv buffer size
+	if(pConfig->nRecvBufferSize && pBuffer->size() > pConfig->nRecvBufferSize){
+		LOG_INFO("client recv buffer size less");
+		client->close();
+		return ;
+	}
 	
 	while(pBuffer->size())
 	{
@@ -614,15 +622,14 @@ void Worker::initRouter()
 
 void Worker::proc()
 {
+	Config *cfg = Config::getInstance();
+	
 	//还原信号默认处理方式
 	signal(SIGTERM, NULL);
 	signal(SIGUSR1, NULL);
 
 	//set process title
-	Config *cfg = Config::getInstance();
-	char title[256];
-	snprintf(title, 256, "fooking gateway worker, %s", cfg->sFile.c_str());
-	utils::setProcTitle(title);
+	utils::setProcTitle("fooking gateway worker");
 	
 	//create loop
 	pEventLoop = new EventLoop();

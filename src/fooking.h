@@ -6,8 +6,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#define _DEBUG
-
 #define NS_NAME				fooking
 #define NS_BEGIN			namespace NS_NAME{
 #define NS_END				}
@@ -16,9 +14,6 @@
 #define zmalloc				malloc
 #define zfree				free
 #define zrealloc			realloc
-
-#define PROTOCOL_RAW		1
-#define PROTOCOL_FASTCGI	2
 
 #define SOCKET_NONE			0
 #define SOCKET_TCP			1
@@ -30,9 +25,14 @@
 /* Anti-warning macro... */
 #define NOTUSED(V) 			((void) V)
 
-extern int		fk_nArgc;
-extern char**	fk_pArgv;
-extern char*	fk_pLastArgv;
+typedef struct{
+	int		argc;
+	char**	argv;
+	char**	argvCopy;
+	char*	argvLast;
+}ProcessInfo;
+
+extern ProcessInfo proc;
 
 NS_BEGIN
 	//base class
@@ -98,7 +98,6 @@ NS_BEGIN
 			int n = b - a + 1;
 			return rand() % n + a;
 		}
-		void daemonize();
 		void initProcTitle(int argc, char **argv);
 		void setProcTitle(const char *title);
 		SocketOption parseSocket(const char *string);

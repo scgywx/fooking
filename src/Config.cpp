@@ -44,32 +44,21 @@ bool Config::load(const char *filename)
 	nServerId = readInt("SERVER_ID");
 	bEventConnect = readBoolean("EVENT_CONNECT");
 	bEventClose = readBoolean("EVENT_CLOSE");
+	nMaxClients = readInt("MAX_CLIENT_NUM");
+	nSendBufferSize = readInt("SEND_BUFF_SIZE");
+	nRecvBufferSize = readInt("RECV_BUFF_SIZE");
 	nWorkers = readInt("WORKER_NUM");
+	sScriptFile = readString("SCRIPT_FILE");
+	if(nSendBufferSize <= 0){
+		nSendBufferSize = 8192;
+	}
+	if(nRecvBufferSize <= 0){
+		nRecvBufferSize = 8192;
+	}
 	if(nWorkers < 1){
 		printf("WORKER_NUM Invalid(WORKER_NUM>=1)\n");
 		return false;
 	}
-	
-	nMaxClients = readInt("MAX_CLIENT_NUM");
-	if(nMaxClients < 1){
-		printf("MAX_CLIENT_NUM Invalid(MAX_CLIENT_NUM>=1)\n");
-		return false;
-	}
-	
-	nSendBufferSize = readInt("SEND_BUFF_SIZE");
-	if(nSendBufferSize < 1){
-		printf("SEND_BUFF_SIZE Invalid(SEND_BUFF_SIZE>=1)\n");
-		return false;
-	}
-	
-	nRecvBufferSize = readInt("RECV_BUFF_SIZE");
-	if(nRecvBufferSize < 1){
-		printf("RECV_BUFF_SIZE Invalid(RECV_BUFF_SIZE>=1)\n");
-		return false;
-	}
-	
-	//暂时只能fastcgi
-	nProtocol = readInt("PROTOCOL");
 	
 	//backend server list
 	nBackendTimeout = readInt("BACKEND_TIMEOUT");
@@ -107,7 +96,6 @@ bool Config::load(const char *filename)
 	}
 	
 	//router option
-	sScriptFile = readString("SCRIPT_FILE");
 	sRouterHost = readString("ROUTER_HOST");
 	nRouterPort = readInt("ROUTER_PORT");
 	

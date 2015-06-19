@@ -9,12 +9,6 @@ class RouterClient
 	{
 		$this->_host = $host;
 		$this->_port = $port;
-		
-		$this->_socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-		if(!socket_connect($this->_socket, $this->_host, $this->_port)){
-			close();
-			$this->_socket = false;
-		}
 	}
 	
 	public function close()
@@ -66,31 +60,41 @@ class RouterClient
 		}
 		
 		$data = $msg['body'];
-		$clients = $this->readInt32($data);
-		$gateways = $this->readInt32($data, 4);
-		$list = array();
+		$info = array();
+		do{
+			$pos = strpos($data, "\r\n");
+			if($pos === false){
+				break;
+			}
+			
+			$line = substr($data, 0, $pos);
+			$args = explode(': ', $line);
+			if($args[0] == 'gateway'){
+				list($serverid, $clients, $channels) = explode("\t", $args[1]);
+				$info['gateway'][$serverid][] = array(
+					'serverid' => $serverid,
+					'clients' => $clients,
+					'channels' => $channels,
+				);
+			}else{
+				$info[$args[0]] = $args[1];
+			}
+			
+			$data = substr($data, strlen($line) + 2);
+		}while(true);
 		
-		$offset = 8;
-		for($i = 0; $i < $gateways; ++$i){
-			$id = $this->readInt32($data, $offset);
-			$num = $this->readInt32($data, $offset + 4);
-			$offset+= 8;
-			$list[$id][] = array(
-				'num' => $num
-			);
-		}
-		
-		return array(
-			'clients' => $clients,
-			'gateways' => $gateways,
-			'list' => $list
-		);
+		return $info;
 	}
 	
 	private function send($type, $sid, $msg)
 	{
+		$this->_socket = socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
 		if ($this->_socket === false) {
-			echo "socket error\n";
+			return false;
+		}
+
+		$result = socket_connect($this->_socket, $this->_host, $this->_port);
+		if($result === false) {
 			return false;
 		}
 

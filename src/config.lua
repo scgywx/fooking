@@ -34,9 +34,6 @@ SEND_BUFF_SIZE = 8192;
 --接收缓冲区
 RECV_BUFF_SIZE = 8192;
 
---后端协议(1-fastcgi)
-PROTOCOL = 1;
-
 --路由服务器
 ROUTER_HOST = "127.0.0.1";
 ROUTER_PORT = 9010;

@@ -346,9 +346,19 @@ void Router::doChannelUnSub(Connection *conn, RouterMsg *pMsg)
 
 void Router::doInfo(Connection *conn, RouterMsg *pMsg)
 {
-	//开始遍历网关
 	Buffer body;
-	int ngate = 0;
+	char buffer[1024];
+	int bufflen;
+	
+	//clients
+	bufflen = snprintf(buffer, 1024, "clients: %d\r\n", allSessions.size());
+	body.append(buffer, bufflen);
+	
+	//channels
+	bufflen = snprintf(buffer, 1024, "channels: %d\r\n", allChannels.size());
+	body.append(buffer, bufflen);
+	
+	//gateways
 	for(ConnectionSet::const_iterator it = allGateways.begin();
 		it != allGateways.end(); ++it)
 	{
@@ -358,25 +368,14 @@ void Router::doInfo(Connection *conn, RouterMsg *pMsg)
 			continue;
 		}
 		
-		char line[8];
-		net::writeNetInt32(line, pInfo->serverid);
-		net::writeNetInt32(line + sizeof(int), pInfo->sessions.size());
-		body.append(line, sizeof(line));
-		
-		ngate++;
+		bufflen = snprintf(buffer, 1024, "gateway: %d\t%d\t%d\r\n", 
+				pInfo->serverid, pInfo->sessions.size(), pInfo->channels.size());
+		body.append(buffer, bufflen);
 	}
 	
-	//头信息,网关数量与客户端数量
-	char head[8];
-	net::writeNetInt32(head, allSessions.size());
-	net::writeNetInt32(head + sizeof(int), ngate);
-	
 	//发送消息
-	sendHead(conn, ROUTER_MSG_INFO, 0, sizeof(head) + body.size());
-	conn->send(head, sizeof(head));
+	sendHead(conn, ROUTER_MSG_INFO, 0, body.size());
 	conn->send(body.data(), body.size());
-	
-	LOG("getinfo datalen=%d, gates=%d", body.size(), ngate);
 }
 
 void Router::start()
