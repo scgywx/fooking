@@ -5,6 +5,7 @@
 #include <time.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #define NS_NAME				fooking
 #define NS_BEGIN			namespace NS_NAME{

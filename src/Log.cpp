@@ -54,7 +54,7 @@ void Log::write(int level, const char *fmt, ...)
 	struct timeval tv;
 	gettimeofday(&tv, NULL);
 	struct tm *t = localtime(&tv.tv_sec);
-	int n = sprintf(buf, "%d-%02d-%02d %02d:%02d:%02d.%06ld [%s][%d] %s\n", 
+	int n = snprintf(buf, LOG_BUFFER_SIZE, "%d-%02d-%02d %02d:%02d:%02d.%06ld [%s][%d] %s\n", 
 			t->tm_year + 1900,
 			t->tm_mon + 1,
 			t->tm_mday,

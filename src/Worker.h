@@ -12,16 +12,25 @@
 #include "Hashtable.h"
 #include "Router.h"
 #include "Backend.h"
+#include "Script.h"
 
 NS_BEGIN
 
+typedef struct IdleNode{
+	Connection		*conn;
+	uint32_t		expire;
+	struct IdleNode *prev;
+	struct IdleNode *next;
+}IdleNode;
+
 typedef hash_map<Backend*, int> BackendList;
 typedef struct{
-	int			nrequest;
+	uint32_t	nrequest;
 	Session		session;
 	Buffer		params;
 	BackendList	backends;
 	ChannelSet	channels;
+	IdleNode*	idle;
 }ClientData;
 
 class Master;
@@ -66,13 +75,17 @@ private:
 	void 				closeClient(Connection *conn);
 	void				sendToClient(Connection *conn, const char *data, int len);
 	void				sendToClient(Connection *conn, Buffer *msg);
-	void				sendToClientRaw(Connection *conn, const char *data, int len);
-	void				sendToClientScript(Connection *conn, Buffer *msg);
+	void				sendToClientByDefault(Connection *conn, const char *data, int len);
+	void				sendToClientByScript(Connection *conn, Buffer *msg);
 	void				sendToRouter(uint_16 type, uint_16 slen, const char *sessptr, int len, const char *dataptr);
+	void				addIdleNode(Connection *conn);
+	void				delIdleNode(Connection *conn);
+	void				resetIdleNode(Connection *conn);
 private:
 	int					nId;
 	Master*				pMaster;
 	EventLoop*			pEventLoop;
+	Script*				pScript;
 	ClientList			arrClients;
 	Connection*			pRouter;
 	Server*				pServer;
@@ -80,5 +93,7 @@ private:
 	int					nRouterReconnect;
 	BackendList			arrExpireBackends;
 	bool				bHeldAcceptLock;
+	IdleNode*			pIdleHead;
+	IdleNode*			pIdleTail;
 };
 NS_END

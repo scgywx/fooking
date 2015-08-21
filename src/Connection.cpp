@@ -8,6 +8,7 @@ Connection::Connection(EventLoop *loop, int fd):
 	sSocket(fd),
 	bWriting(false),
 	bClosed(false),
+	bConnected(false),
 	pData(NULL),
 	nPort(0),
 	nTimeout(0),
@@ -29,11 +30,14 @@ Connection::Connection(EventLoop *loop, int fd):
 
 Connection::~Connection()
 {
-	//TODO
+	if(!bClosed){
+		close();
+	}
 }
 
 void Connection::initSocket()
 {
+	bConnected = true;
 	sSocket.setNonDelay();
 	sSocket.setKeepAlive();
 	pEventLoop->addEventListener(sSocket.getFd(), EV_IO_READ, EV_IO_CB(this, Connection::onRead), NULL);

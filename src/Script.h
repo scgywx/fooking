@@ -21,18 +21,18 @@ public:
 public:
 	bool			load(std::string &filename);
 	bool			hasConnectProc(){ return bhConnect;}
-	bool			hasInputProc(){ return bhInput;}
-	bool			hasOutputProc(){ return bhOutput;}
+	bool			hasReadProc(){ return bhRead;}
+	bool			hasWriteProc(){ return bhWrite;}
 	bool			hasCloseProc(){ return bhClose;}
 	int				procConnect(Connection *conn);
-	int				procInput(Connection *conn, int requestid, Buffer *input, Buffer *output);
-	int				procOutput(Connection *conn, int requestid, Buffer *input, Buffer *output);
+	int				procRead(Connection *conn, int requestid, Buffer *input, Buffer *output);
+	int				procWrite(Connection *conn, int requestid, Buffer *input, Buffer *output);
 	int				procClose(Connection *conn);
 private:
 	lua_State*		pState;
 	bool			bhConnect;
-	bool			bhInput;
-	bool			bhOutput;
+	bool			bhRead;
+	bool			bhWrite;
 	bool			bhClose;
 };
 NS_END

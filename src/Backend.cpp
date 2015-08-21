@@ -32,6 +32,8 @@
 
 #define FCGI_HEADER_LEN  		8
 
+#define BACKEND_RETRY_MAX		1
+
 NS_USING;
 
 Buffer Backend::bSharedParams;
@@ -42,47 +44,55 @@ Backend::Backend(EventLoop *loop, Connection *client, Buffer *request):
 	pBackend(NULL),
 	pRequest(request)
 {
-	//TODO
+	Config *pConfig = Config::getInstance();
+	int sz = sizeof(unsigned int) * pConfig->arrBackendServer.size();
+	pServerFail = (unsigned int*)zmalloc(sz);
+	memset(pServerFail, 0, sz);
+	nWeights = pConfig->nMaxBackendWeights;
 }
 
 Backend::~Backend()
 {
 	shutdown();
+	zfree(pServerFail);
 	delete pRequest;
 }
 
 bool Backend::run()
 {
 	Config *pConfig = Config::getInstance();
-	int r = utils::randInt(1, pConfig->nMaxBackendWeights);
+	int r = utils::randInt(1, nWeights);
 	int nserver = pConfig->arrBackendServer.size();
 	int start = utils::randInt(0, nserver - 1);
 	int old = start;
 	
 	do{
-		BackendOption &opt = pConfig->arrBackendServer[start];
-		r-= opt.weight;
-		if(r <= 0 && (opt.type == SOCKET_TCP || opt.type == SOCKET_UNIX))
-		{
-			//创建连接
-			Connection *backend = new Connection(pLoop);
-			backend->setConnectHandler(EV_CB(this, Backend::onConnect));
-			backend->setMessageHandler(EV_CB(this, Backend::onMessage));
-			backend->setCloseHandler(EV_CB(this, Backend::onClose));
-			if(pConfig->nBackendTimeout){
-				backend->setTimeout(pConfig->nBackendTimeout * 1000);
+		if(pServerFail[start] < BACKEND_RETRY_MAX){
+			BackendOption &opt = pConfig->arrBackendServer[start];
+			r-= opt.weight;
+			if(r <= 0 && (opt.type == SOCKET_TCP || opt.type == SOCKET_UNIX))
+			{
+				//创建连接
+				Connection *backend = new Connection(pLoop);
+				backend->setConnectHandler(EV_CB(this, Backend::onConnect));
+				backend->setMessageHandler(EV_CB(this, Backend::onMessage));
+				backend->setCloseHandler(EV_CB(this, Backend::onClose));
+				if(pConfig->nBackendTimeout){
+					backend->setTimeout(pConfig->nBackendTimeout * 1000);
+				}
+				if(opt.type == SOCKET_TCP){
+					LOG("backend connect to %s:%d", opt.host.c_str(), opt.port);
+					backend->connectTcp(opt.host.c_str(), opt.port);
+				}else{
+					LOG("backend connect to unix:%s", opt.host.c_str());
+					backend->connectUnix(opt.host.c_str());
+				}
+				
+				pBackend = backend;
+				nBackendId = start;
+				
+				return true;
 			}
-			if(opt.type == SOCKET_TCP){
-				LOG("backend connect to %s:%d", opt.host.c_str(), opt.port);
-				backend->connectTcp(opt.host.c_str(), opt.port);
-			}else{
-				LOG("backend connect to unix:%s", opt.host.c_str());
-				backend->connectUnix(opt.host.c_str());
-			}
-			
-			pBackend = backend;
-			
-			return true;
 		}
 		
 		if(++start >= nserver){
@@ -91,7 +101,7 @@ bool Backend::run()
 		
 	}while(old != start);
 	
-	LOG_ERR("Can't found backend, Please check BACKEND_SERVER");
+	LOG_ERR("Can't found available backend server, Please check BACKEND_SERVER");
 	
 	return false;
 }
@@ -99,7 +109,6 @@ bool Backend::run()
 void Backend::shutdown()
 {
 	if(pBackend){
-		pBackend->close();
 		delete pBackend;
 		pBackend = NULL;
 	}
@@ -123,11 +132,32 @@ void Backend::onMessage(Connection *conn)
 
 void Backend::onClose(Connection *conn)
 {
+	bool retry = false;
 	int err = conn->getError();
 	if(err){
-		LOG("backend error=%d, errstr=%s", err, strerror(err));
+		LOG_ERR("backend error=%d, errstr=%s", err, strerror(err));
+		
+		//retry connect
+		if(!conn->isConnected()){
+			retry = true;
+			
+			if(++pServerFail[nBackendId] >= BACKEND_RETRY_MAX){
+				Config *pCfg = Config::getInstance();
+				nWeights-= pCfg->arrBackendServer[nBackendId].weight;
+				if(nWeights <= 0){
+					retry = false;
+				}
+			}
+		}
 	}else{
 		LOG("backend close, conn=%p", conn);
+	}
+	
+	//release
+	shutdown();
+	
+	if(retry && run()){
+		return ;
 	}
 	
 	EV_INVOKE(cbClose, this);
@@ -207,6 +237,7 @@ bool Backend::response()
 			break;
 		}
 		
+		//parse header
 		FastCGIHeader *header = (FastCGIHeader*)(inbuf + offset);
 		size_t requestId = (header->requestIdB1 << 8) | header->requestIdB0;
 		size_t contentLength = (header->contentLengthB1 << 8) | header->contentLengthB0;
@@ -217,6 +248,9 @@ bool Backend::response()
 			break;
 		}
 		
+		//data
+		const char *dataptr = (const char *)header + sizeof(FastCGIHeader);
+		
 		//log
 		LOG("version=%d, type=%d, requestid=%d, contentLength=%d, paddingLength=%d, reserved=%d, data=%s",
 			header->version,
@@ -225,30 +259,24 @@ bool Backend::response()
 			contentLength,
 			header->paddingLength,
 			header->reserved,
-			inbuf + offset + sizeof(FastCGIHeader));
-			
-		//offset
-		offset+= lineSize;
+			dataptr);
 		
-		const char *dataptr = (const char *)header + sizeof(FastCGIHeader);
+		//process response
 		switch(header->type)
 		{
-			case FCGI_STDOUT:
 			case FCGI_STDERR:
 			{
-				//读取body
-				const char *lenptr = strstr(dataptr, "Content-Length: ");
-				if(lenptr){
-					lenptr+= (sizeof("Content-Length: ") - 1);
-					int msglen = atoi(lenptr);
-					const char *bodyptr = NULL;
-					if(msglen && (bodyptr = strstr(lenptr, "\r\n\r\n"))){
-						bodyptr+= 4;
-						int bodylen = dataptr + contentLength - bodyptr;
-						if(msglen <= bodylen){
-							int start = bodylen - msglen;
-							mResponse.append(bodyptr + start, msglen);
-						}
+				LOG_ERR("backend error!!!, %s", dataptr);
+				break;
+			}
+			case FCGI_STDOUT:
+			{
+				FastCGIBody body = parse(dataptr, contentLength);
+				if(body.length){
+					if(body.offset >= 0){
+						mResponse.append(body.ptr + body.offset, body.length);
+					}else{
+						mResponse.append(body.ptr + body.total + body.offset, body.length);
 					}
 				}
 				break;
@@ -269,6 +297,9 @@ bool Backend::response()
 				break;
 			}
 		}
+		
+		//offset
+		offset+= lineSize;
 	}
 	
 	pBuffer->seek(offset);
@@ -347,3 +378,130 @@ int	Backend::makeParam(Buffer &buf, const char *name, int namelen, const char *v
 	return nnpair + nvpair + namelen + vallen;
 }
 
+FastCGIBody	Backend::parse(const char *ptr, int len)
+{
+	static unsigned char lowcase[] =
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0-\0\0" "0123456789\0\0\0\0\0\0"
+        "\0abcdefghijklmnopqrstuvwxyz\0\0\0\0\0"
+        "\0abcdefghijklmnopqrstuvwxyz\0\0\0\0\0"
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"
+        "\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0";
+
+	FastCGIBody body;
+	char name[128];
+	char value[128];
+	int namelen = 0;
+	int vallen = 0;
+	int state = kStart;
+	unsigned char ch, c;
+	bool lineDone;
+
+	memset(&body, 0, sizeof(FastCGIBody));
+
+	for(int i = 0; i < len; ++i)
+	{
+		lineDone = false;
+		ch = ptr[i];
+
+		if(ch == '\r'){
+			continue;
+		}
+
+		switch(state){
+		case kStart:
+			switch(ch){
+			case '\n':
+				state = kBody;
+				break;
+			default:
+				state = kName;
+				namelen = vallen = 0;
+				c = lowcase[ch];
+				if(c){
+					name[0] = c;
+					namelen = 1;
+				}
+				break;
+			}
+			break;
+		case kName:
+			c = lowcase[ch];
+			if(c){
+				name[namelen++] = c;
+				break;
+			}
+
+			switch(ch){
+			case '\n':
+				lineDone = true;
+				break;
+			case ':':
+				state = kValueReady;
+				break;
+			}
+			break;
+		case kValueReady:
+			switch(ch){
+			case '\n':
+				lineDone = true;
+				break;
+			case ' ':
+				break;
+			default:
+				state = kValue;
+				value[0] = ch;
+				vallen = 1;
+				break;
+			}
+			break;
+		case kValue:
+			switch(ch){
+			case '\n':
+				lineDone = true;
+				break;
+			default:
+				value[vallen++] = ch;
+				break;
+			}
+			break;
+		case kBody:
+			body.ptr = ptr + i;
+			body.total = len - i;
+			break;
+		}
+
+		if(lineDone){
+			state = kStart;
+			//check Content-Length & Content-Offset
+			if(namelen == 14 && vallen){
+				name[namelen] = '\0';
+				value[vallen] = '\0';
+				if(strncmp(name, "content-length", 14) == 0){
+					int v = atoi(value);
+					body.length = v;
+				}else if(strncmp(name, "content-offset", 14) == 0){
+					int v = atoi(value);
+					body.offset = v;
+				}
+			}
+		}
+
+		if(body.ptr){
+			break;
+		}
+	}
+	
+	LOG("total=%d, length=%d, offset=%d\n", body.total, body.length, body.offset);
+	
+	//check
+	if(body.offset < 0 && body.length + body.offset > 0){
+		body.length = 0;
+	}else if(body.offset > 0 && body.offset + body.length > body.total){
+		body.length = 0;
+	}
+	
+	return body;
+}

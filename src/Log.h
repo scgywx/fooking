@@ -9,7 +9,7 @@
 
 NS_BEGIN
 
-#define LOG_BUFFER_SIZE 	1024
+#define LOG_BUFFER_SIZE 	8192
 
 #define LOG_LEVEL_ERROR		1
 #define LOG_LEVEL_INFO		2

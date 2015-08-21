@@ -49,6 +49,7 @@ bool Config::load(const char *filename)
 	nRecvBufferSize = readInt("RECV_BUFF_SIZE");
 	nWorkers = readInt("WORKER_NUM");
 	sScriptFile = readString("SCRIPT_FILE");
+	nIdleTime = readInt("IDLE_TIME");
 	if(nSendBufferSize <= 0){
 		nSendBufferSize = 8192;
 	}
@@ -92,6 +93,12 @@ bool Config::load(const char *filename)
 		lua_pop(pState, 1);
 	}else{
 		printf("BACKEND_SERVER invalid\n");
+		return false;
+	}
+	
+	//check backend server
+	if(arrBackendServer.empty()){
+		printf("BACKEND_SERVER is empty");
 		return false;
 	}
 	

@@ -161,6 +161,20 @@ static int luaConnSessionId(lua_State *pState)
 	return 1;
 }
 
+static int luaConnClose(lua_State *pState)
+{
+	Connection *pConn = (Connection*)lua_touserdata(pState, -1);
+	if(!pConn){
+		return luaL_error(pState, "invalid connection");
+	}
+	
+	pConn->close();
+		
+	lua_pop(pState, 1);
+	
+	return 0;
+}
+
 static int luaopen_buffer(lua_State* l)
 {
 	const luaL_Reg func[] = {                            
@@ -180,6 +194,7 @@ static int luaopen_connection(lua_State* l)
 		{"buffer", luaConnGetBuffer},
 		{"send", luaConnSend},
 		{"id", luaConnSessionId},
+		{"close", luaConnClose},
 		{NULL, NULL}
 	};
     luaL_newlib(l, func);
@@ -189,8 +204,8 @@ static int luaopen_connection(lua_State* l)
 Script::Script():
 	pState(NULL),
 	bhConnect(false),
-	bhInput(false),
-	bhOutput(false),
+	bhRead(false),
+	bhWrite(false),
 	bhClose(false)
 {
 
@@ -218,16 +233,16 @@ bool Script::load(std::string &filename)
 		return false;
 	}
 	
-	//check input handler
-	lua_getglobal(pState, "onInput");
+	//check read handler
+	lua_getglobal(pState, "onRead");
 	if(lua_isfunction(pState, -1)){
-		bhInput = true;
+		bhRead = true;
 	}
 	
-	//check output handler
-	lua_getglobal(pState, "onOutput");
+	//check write handler
+	lua_getglobal(pState, "onWrite");
 	if(lua_isfunction(pState, -1)){
-		bhOutput = true;
+		bhWrite = true;
 	}
 	
 	//check connect handler
@@ -248,51 +263,51 @@ bool Script::load(std::string &filename)
 	return true;
 }
 
-int Script::procInput(Connection *conn, int requestid, Buffer *input, Buffer *output)
+int Script::procRead(Connection *conn, int requestid, Buffer *input, Buffer *output)
 {
-	if(!bhInput){
+	if(!bhRead){
 		return 0;
 	}
 	
-	LOG("call lua func onInput start");
-	lua_getglobal(pState, "onInput");
+	LOG("call lua func onRead start");
+	lua_getglobal(pState, "onRead");
 	lua_pushlightuserdata(pState, conn);
 	lua_pushinteger(pState, requestid);
 	lua_pushlightuserdata(pState, input);
 	lua_pushlightuserdata(pState, output);
 	int ret = lua_pcall(pState, 4, 1, 0);
 	if(ret != 0){
-		LOG_ERR("call lua func onInput error, err=%s", lua_tostring(pState, -1));
+		LOG_ERR("call lua func onRead error, err=%s", lua_tostring(pState, -1));
 		return 0;//不能返回-1,如果lua调用错误，可能导致内存急剧增长
 	}
 	
 	int n = lua_tointeger(pState, -1);
-	LOG("call lua func onInput, ret=%d", n);
+	LOG("call lua func onRead, ret=%d", n);
 	lua_pop(pState, 1);
 	
 	return n;
 }
 
-int Script::procOutput(Connection *conn, int requestid, Buffer *input, Buffer *output)
+int Script::procWrite(Connection *conn, int requestid, Buffer *input, Buffer *output)
 {
-	if(!bhOutput){
+	if(!bhWrite){
 		return 0;
 	}
 	
-	LOG("call lua func onOutput start");
-	lua_getglobal(pState, "onOutput");
+	LOG("call lua func onWrite start");
+	lua_getglobal(pState, "onWrite");
 	lua_pushlightuserdata(pState, conn);
 	lua_pushinteger(pState, requestid);
 	lua_pushlightuserdata(pState, input);
 	lua_pushlightuserdata(pState, output);
 	int ret = lua_pcall(pState, 4, 1, 0);
 	if(ret != 0){
-		LOG_ERR("call lua func onOutput error, err=%s", lua_tostring(pState, -1));
+		LOG_ERR("call lua func onWrite error, err=%s", lua_tostring(pState, -1));
 		return 0;//同上
 	}
 	
 	int n = lua_tointeger(pState, -1);
-	LOG("call lua func onOutput, ret=%d", n);
+	LOG("call lua func onWrite, ret=%d", n);
 	lua_pop(pState, 1);
 	
 	return n;

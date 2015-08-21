@@ -38,6 +38,9 @@ RECV_BUFF_SIZE = 8192;
 ROUTER_HOST = "127.0.0.1";
 ROUTER_PORT = 9010;
 
+--指定时间内连接没有数据包请求，将会踢掉连接(单位秒),为0不处理
+IDLE_TIME = 30;
+
 --脚本
 SCRIPT_FILE = "script.lua";
 
@@ -53,7 +56,7 @@ EVENT_CONNECT = 0;
 
 --关闭连接是否通知(0-不通知, 1-通知)
 --请求头会有EVENT=2
-EVENT_CLOSE = 0;
+EVENT_CLOSE = 1;
 
 --fastcgi params(仅当PROTOCOL = 2时有效)
 FASTCGI_ROOT = "/home/fooking/example/chat";

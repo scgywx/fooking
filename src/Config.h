@@ -66,9 +66,10 @@ public:
 	std::string			sScriptFile;//script
 	BackendServer		arrBackendServer;//后端服务器
 	int					nBackendTimeout;//后端超时时间		
-	int					nMaxBackendWeights;//后端服务器总权重值	
+	int					nMaxBackendWeights;//后端服务器总权重值
 	std::string			sFastcgiRoot;
 	std::string			sFastcgiFile;
 	FastcgiParams		arFastcgiParams;
+	int					nIdleTime;//空闲时间
 };
 NS_END

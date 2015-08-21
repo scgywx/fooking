@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include "fooking.h"
 #include "EventLoop.h"
 #include "Socket.h"
@@ -18,6 +19,8 @@ public:
 	int				send(const char *data, int len);
 	int				send(Buffer &buffer);
 	void			close();
+	bool			isConnected() const { return bConnected;}
+	bool			isClosed() const { return bClosed; }
 	Socket&			getSocket(){ return sSocket;}
 	Buffer*			getBuffer(){return &readBuffer;}
 	void			setMessageHandler(const EventHandler &cb){ cbRead = cb;}
@@ -43,6 +46,7 @@ private:
 	Buffer			readBuffer;
 	bool			bWriting;
 	bool			bClosed;
+	bool			bConnected;
 	EventHandler	cbRead;
 	EventHandler	cbClose;
 	EventHandler	cbConnect;

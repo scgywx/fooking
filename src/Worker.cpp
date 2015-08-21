@@ -15,7 +15,9 @@ Worker::Worker(Master *master, int id):
 	pMaster(master),
 	pEventLoop(NULL),
 	nRouterReconnect(0),
-	bHeldAcceptLock(false)
+	bHeldAcceptLock(false),
+	pIdleHead(NULL),
+	pIdleTail(NULL)
 {
 	//TODO
 }
@@ -73,8 +75,13 @@ void Worker::createClient(int fd, const char *host, int port)
 	}
 	
 	//lua通知
-	if(pMaster->pScript && pMaster->pScript->hasConnectProc()){
-		pMaster->pScript->procConnect(client);
+	if(pScript && pScript->hasConnectProc()){
+		pScript->procConnect(client);
+	}
+	
+	//idle添加
+	if(pConfig->nIdleTime > 0){
+		addIdleNode(client);
 	}
 }
 
@@ -128,8 +135,13 @@ void Worker::closeClient(Connection *client)
 	arrClients.erase(sid);
 	
 	//lua更新
-	if(pMaster->pScript && pMaster->pScript->hasCloseProc()){
-		pMaster->pScript->procClose(client);
+	if(pScript && pScript->hasCloseProc()){
+		pScript->procClose(client);
+	}
+	
+	//删除idle
+	if(pConfig->nIdleTime > 0){
+		delIdleNode(client);
 	}
 	
 	delete pData;
@@ -153,7 +165,7 @@ void Worker::sendToRouter(uint_16 type, uint_16 slen, const char *sessptr, int l
 	}
 }
 
-void Worker::sendToClientRaw(Connection *conn, const char *data, int len)
+void Worker::sendToClientByDefault(Connection *conn, const char *data, int len)
 {
 	if(len){
 		char hdr[4];
@@ -163,38 +175,38 @@ void Worker::sendToClientRaw(Connection *conn, const char *data, int len)
 	}
 }
 
-void Worker::sendToClientScript(Connection *conn, Buffer *msg)
+void Worker::sendToClientByScript(Connection *conn, Buffer *msg)
 {
 	ClientData *pData = (ClientData*)conn->getData();
 	Buffer resp;
-	int ret = pMaster->pScript->procOutput(conn, pData->nrequest, msg, &resp);
+	int ret = pScript->procWrite(conn, pData->nrequest, msg, &resp);
 	if(ret > 0){
 		if(!resp.empty()){
 			conn->send(resp.data(), resp.size());
 		}
 	}else if(ret == 0){
 		if(!msg->empty()){
-			sendToClientRaw(conn, msg->data(), msg->size());
+			sendToClientByDefault(conn, msg->data(), msg->size());
 		}
 	}
 }
 
 void Worker::sendToClient(Connection *conn, Buffer *msg)
 {
-	if(pMaster->pScript && pMaster->pScript->hasOutputProc()){
-		sendToClientScript(conn, msg);
+	if(pScript && pScript->hasWriteProc()){
+		sendToClientByScript(conn, msg);
 	}else if(!msg->empty()){
-		sendToClientRaw(conn, msg->data(), msg->size());
+		sendToClientByDefault(conn, msg->data(), msg->size());
 	}
 }
 
 void Worker::sendToClient(Connection *conn, const char *data, int len)
 {
-	if(pMaster->pScript && pMaster->pScript->hasOutputProc()){
+	if(pScript && pScript->hasWriteProc()){
 		Buffer msg(data, len);
-		sendToClientScript(conn, &msg);
+		sendToClientByScript(conn, &msg);
 	}else if(len){
-		sendToClientRaw(conn, data, len);
+		sendToClientByDefault(conn, data, len);
 	}
 }
 
@@ -279,8 +291,8 @@ void Worker::onMessage(Connection *client)
 		Buffer *msg = new Buffer();
 		
 		//自定义协议处理
-		if(pMaster->pScript && pMaster->pScript->hasInputProc()){
-			int ret = pMaster->pScript->procInput(client, pData->nrequest, pBuffer, msg);
+		if(pScript && pScript->hasReadProc()){
+			int ret = pScript->procRead(client, pData->nrequest, pBuffer, msg);
 			if(ret < 0){
 				delete msg;
 				return ;
@@ -332,6 +344,11 @@ void Worker::onMessage(Connection *client)
 				delete backend;
 				LOG_ERR("not found backend server");
 			}
+		}
+		
+		//重置idle
+		if(pConfig->nIdleTime > 0){
+			resetIdleNode(client);
 		}
 	}
 }
@@ -583,9 +600,89 @@ void Worker::doChannelPub(RouterMsg *pMsg)
 	}
 }
 
+//添加空闲连接
+void Worker::addIdleNode(Connection *conn)
+{
+	Config *pCfg = Config::getInstance();
+	IdleNode *node = (IdleNode*)zmalloc(sizeof(IdleNode));
+	node->conn = conn;
+	node->expire = (uint32_t)time(NULL) + pCfg->nIdleTime;
+	
+	if(pIdleHead){
+		node->prev = pIdleTail;
+		node->next = NULL;
+		pIdleTail->next = node;
+		pIdleTail = node;
+	}else{
+		node->next = node->prev = NULL;
+		pIdleHead = pIdleTail = node;
+	}
+	
+	ClientData *pData = (ClientData*)conn->getData();
+	pData->idle = node;
+}
+
+//删除空闲连接
+void Worker::delIdleNode(Connection *conn)
+{
+	ClientData *pData = (ClientData*)conn->getData();
+	IdleNode *node = pData->idle;
+	
+	if(node->prev){
+		node->prev->next = node->next;
+	}else{
+		pIdleHead = node->next;
+	}
+	
+	if(node->next){
+		node->next->prev = node->prev;
+	}else{
+		pIdleTail = node->prev;
+	}
+	
+	zfree(node);
+}
+
+//重置空闲连接
+void Worker::resetIdleNode(Connection *conn)
+{
+	ClientData *pData = (ClientData*)conn->getData();
+	IdleNode *node = pData->idle;
+	
+	//先移除
+	if(node->prev){
+		node->prev->next = node->next;
+	}else{
+		pIdleHead = node->next;
+	}
+	
+	if(node->next){
+		node->next->prev = node->prev;
+	}else{
+		pIdleTail = node->prev;
+	}
+	
+	//再重置
+	Config *pCfg = Config::getInstance();
+	node->expire = (uint32_t)time(NULL) + pCfg->nIdleTime;
+	
+	//后插入
+	if(pIdleHead){
+		node->prev = pIdleTail;
+		node->next = NULL;
+		pIdleTail->next = node;
+		pIdleTail = node;
+	}else{
+		node->next = node->prev = NULL;
+		pIdleHead = pIdleTail = node;
+	}
+}
+
 void Worker::loopBefore(void *data)
 {
-	Config *pConfig = Config::getInstance();
+	Config *pCfg = Config::getInstance();
+	
+	//accept mutex check
 	if(pMaster->bUseAcceptMutex)
 	{
 		if(bHeldAcceptLock && 
@@ -595,12 +692,29 @@ void Worker::loopBefore(void *data)
 			bHeldAcceptLock = false;
 			pServer->stop();
 		}else if(!bHeldAcceptLock && 
-			pMaster->pGlobals->workerClients[nId] <= static_cast<int>(pMaster->pGlobals->clients * 1.125 / pConfig->nWorkers) &&
+			pMaster->pGlobals->workerClients[nId] <= static_cast<int>(pMaster->pGlobals->clients * 1.125 / pCfg->nWorkers) &&
 			LockAcceptMutex(&pMaster->pGlobals->lock, nPid))
 		{
 			//LOG("lock accept mutex");
 			bHeldAcceptLock = true;
 			pServer->start();
+		}
+	}
+	
+	//idle check
+	if(pCfg->nIdleTime > 0){
+		uint32_t now = time(NULL);
+		IdleNode *node = pIdleHead;
+		while(node){
+			IdleNode *next = node->next;
+			if(now >= node->expire){
+				LOG_INFO("connection close by idle");
+				node->conn->close();
+			}else{
+				break;
+			}
+			
+			node = next;
 		}
 	}
 }
@@ -666,5 +780,6 @@ void Worker::proc()
 	}
 	
 	LOG("worker started, pipefd=%d", nPipefd);
+	pScript = pMaster->pScript;
 	pEventLoop->run();
 }

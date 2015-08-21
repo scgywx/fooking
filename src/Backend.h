@@ -35,6 +35,21 @@ typedef struct {
 	unsigned char reserved[3];
 }FastCGIEndRequest;
 
+typedef struct{
+	const char*	ptr;
+	int		total;
+	int		length;
+	int		offset;
+}FastCGIBody;
+
+enum{
+	kStart = 0,
+	kName,
+	kValueReady,
+	kValue,
+	kBody
+};
+
 //fastcgi backend
 class Backend:
 	public Object
@@ -64,6 +79,7 @@ private:
 private:
 	bool 				request();
 	bool 				response();
+	FastCGIBody			parse(const char *ptr, int len);
 	FastCGIHeader		makeHeader(int type, int requestid, int contentLength, int paddingLength);
 	FastCGIBeginRequest	makeBeginRequest(int role, int flag);
 private:
@@ -75,6 +91,9 @@ private:
 	Buffer				bParams;
 	EventHandler		cbResponse;
 	EventHandler		cbClose;
+	int					nBackendId;
+	int					nWeights;
+	unsigned int*		pServerFail;
 	static Buffer		bSharedParams;
 };
 NS_END

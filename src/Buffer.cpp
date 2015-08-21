@@ -19,7 +19,7 @@ Buffer::Buffer(size_t n):
 	nLength(0),
 	nOffset(0)
 {
-	if(n > 0){
+	if(n){
 		resize(n);
 	}
 }
@@ -30,27 +30,28 @@ Buffer::Buffer(const char *buffer, size_t n):
 	nLength(0),
 	nOffset(0)
 {
-	if(n > 0){
+	if(n){
 		resize(n);
 		append(buffer, n);
 	}
 }
 
-Buffer::Buffer(Buffer &buf):
+Buffer::Buffer(const Buffer &buf):
 	pBuffer(NULL),
 	nTotal(0),
 	nLength(0),
 	nOffset(0)
 {
-	if(buf.size() > 0){
-		resize(buf.size());
-		append(buf.data(), buf.size());
+	size_t sz = buf.size();
+	if(sz){
+		resize(sz);
+		append(buf.data(), sz);
 	}
 }
 
 Buffer::~Buffer()
 {
-	free(pBuffer);
+	zfree(pBuffer);
 }
 
 size_t Buffer::append(const char *buf, size_t len)
@@ -71,6 +72,9 @@ size_t Buffer::append(const char *buf, size_t len)
 
 	memcpy(pBuffer + nOffset + nLength, buf, len);
 	nLength+= len;
+	
+	//end char
+	pBuffer[nOffset + nLength] = '\0';
 
 	return nLength;
 }
@@ -86,12 +90,4 @@ size_t Buffer::seek(size_t n)
 	}
 	
 	return nLength;
-}
-
-void Buffer::resize(size_t n)
-{
-	if(nTotal < n){
-		pBuffer = (char *)zrealloc(pBuffer, n);
-		nTotal = n;
-	}
 }
