@@ -19,18 +19,18 @@ backend protocol is the protocol use in fooking to backends, you can use any lua
 
 # getting started
 this example is chat room, source code in example/chat   
-## Step 1(download and compile)   
+* Step 1(download and compile)   
    git clone https://github.com/scgywx/fooking.git   
    cd {$FOOKING_PATH}   
    make   
-## Step 2(start fooking router server)   
+* Step 2(start fooking router server)   
    cd src   
    ./fooking router.lua   
-## Step 3(start fooking gateway server)   
+* Step 3(start fooking gateway server)   
    ./fooking config.lua   
-## Step 4(start php-fpm server)
+* Step 4(start php-fpm server)
    service php-fpm start(if it was started please skip this step)
-## Step 5(test)
+* Step 5(test)
    modify websocket server host and port in example/chat/index.html(search 'ws://')   
    open index.html in your browser and starting chat   
 
