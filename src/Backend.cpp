@@ -35,6 +35,8 @@
 
 #define BACKEND_RETRY_MAX		1
 
+#define ALIGN(size, align) ((size + align - 1) & (~(align - 1)))
+
 NS_USING;
 
 Backend::Backend(EventLoop *loop):
@@ -154,7 +156,9 @@ void Backend::onMessage(Connection *conn)
 				arrIdleBackends[nIdleTop++] = ctx;
 				ctx->index = nIdleTop;
 			}
-		}
+		}/*else{
+			conn->close();
+		*/
 	}
 }
 
@@ -288,8 +292,10 @@ bool Backend::request(RequestContext *ctx)
 	}
 	
 	//params begin
-	FastCGIHeader hdrParam = makeHeader(FCGI_PARAMS, 1, 
-		bParams.size() + (ctx->params ? ctx->params->size() : 0) + params.size(), 0);
+	static char *paddings = "\0\0\0\0\0\0\0\0";
+	int pmsz = bParams.size() + (ctx->params ? ctx->params->size() : 0) + params.size();
+	int pdsz = ALIGN(pmsz, 8);
+	FastCGIHeader hdrParam = makeHeader(FCGI_PARAMS, 1, pmsz, pdsz);
 	conn->send((const char*)&hdrParam, sizeof(FastCGIHeader));
 	
 	//shared params
@@ -307,15 +313,24 @@ bool Backend::request(RequestContext *ctx)
 		conn->send(params);
 	}
 	
+	//padding
+	if(pdsz){
+		conn->send(paddings, pdsz);
+	}
+	
 	//params end
 	FastCGIHeader endParam = makeHeader(FCGI_PARAMS, 1, 0, 0);
 	conn->send((const char*)&endParam, sizeof(FastCGIHeader));
 	
 	//stdin begin
 	if(ctx->req && !ctx->req->empty()){
-		FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, ctx->req->size(), 0);
+		int rpdsz = ALIGN(ctx->req->size(), 8);
+		FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, ctx->req->size(), rpdsz);
 		conn->send((const char*)&inh, sizeof(FastCGIHeader));
 		conn->send(ctx->req->data(), ctx->req->size());
+		if(rpdsz){
+			conn->send(paddings, rpdsz);
+		}
 	}
 	
 	//stdin end
