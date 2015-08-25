@@ -1,6 +1,8 @@
 #pragma once
 #include <map>
 #include <string>
+#include <list>
+#include <vector>
 #include "fooking.h"
 #include "Buffer.h"
 #include "EventLoop.h"
@@ -50,50 +52,58 @@ enum{
 	kBody
 };
 
+typedef struct{
+	int serverid;
+	TimerId timer;
+	Connection *backend;
+	Connection *client;
+	Buffer *req;
+	Buffer *rep;
+	Buffer *params;
+	uint8_t *fails;
+	uint8_t abort;
+	uint16_t index;
+}RequestContext;
+
 //fastcgi backend
 class Backend:
 	public Object
 {
+	typedef std::vector<int> ServerRoll;
 public:
-	Backend(EventLoop *loop, Connection *client, Buffer *request);
+	Backend(EventLoop *loop);
 	~Backend();
 public:
-	bool				run();
-	void				shutdown();
+	RequestContext*		post(Connection *client, Buffer *body, Buffer *params);
+	void				abort(RequestContext *ctx){ ctx->abort = 1; }
 	void				addParam(const char *name, int namelen, const char *value, int vallen);
-	void				copyParam(const char *data, int len){ bParams.append(data, len); }
-	void				copyParam(const Buffer &params){ bParams.append(params); }
-	void				setResponseHandler(const EventHandler &cb){ cbResponse = cb;}
-	void				setCloseHandler(const EventHandler &cb){ cbClose = cb;}
-	Buffer&				getResponse(){ return mResponse;}
-	Connection*			getClient(){ return pClient;}
-	void				setClient(Connection *c){ pClient = c;}
+	void				setHandler(const EventHandler &cb){ cbHandler = cb; }
 public:
-	static void			addSharedParam(const char *name, int namelen, const char *value, int vallen);
 	static int			makeParam(Buffer &buf, const char *name, int namelen, const char *value, int vallen);
 private:
 	void				onConnect(Connection *conn);
 	void				onMessage(Connection *conn);
 	void				onClose(Connection *conn);
 	void				onWriteComplete(Connection *conn);
+	void				onTimeout(TimerId id, Connection *conn);
 private:
-	bool 				request();
-	bool 				response();
+	bool				connect(RequestContext *ctx);
+	bool 				request(RequestContext *ctx);
+	bool 				response(RequestContext *ctx);
 	FastCGIBody			parse(const char *ptr, int len);
 	FastCGIHeader		makeHeader(int type, int requestid, int contentLength, int paddingLength);
 	FastCGIBeginRequest	makeBeginRequest(int role, int flag);
 private:
 	EventLoop*			pLoop;
-	Connection*			pClient;
-	Connection*			pBackend;
-	Buffer*				pRequest;
-	Buffer				mResponse;
+	EventHandler		cbHandler;
 	Buffer				bParams;
-	EventHandler		cbResponse;
-	EventHandler		cbClose;
-	int					nBackendId;
-	int					nWeights;
-	unsigned int*		pServerFail;
-	static Buffer		bSharedParams;
+	ServerRoll			arrServerRolls;
+	int					nRoll;
+	int					nServers;
+	int					nKeepalive;
+	int					nConnectTimeout;
+	int					nReadTimeout;
+	int					nIdleTop;
+	RequestContext**	arrIdleBackends;
 };
 NS_END

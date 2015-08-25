@@ -62,15 +62,10 @@ void Worker::createClient(int fd, const char *host, int port)
 	//backend通知
 	Config *pConfig = Config::getInstance();
 	if(pConfig->bEventConnect){
-		Backend *backend = new Backend(pEventLoop, client, NULL);
-		backend->copyParam(pData->params);
-		backend->addParam("EVENT", sizeof("EVENT") - 1, "1", 1);
-		backend->setCloseHandler(EV_CB(this, Worker::onBackendClose));
-		backend->setResponseHandler(EV_CB(this, Worker::onBackendResponse));
-		if(backend->run()){
-			pData->backends[backend] = 1;
-		}else{
-			delete backend;
+		Buffer *params = new Buffer(pData->params);
+		Backend::makeParam(*params, "EVENT", sizeof("EVENT") - 1, "1", 1);
+		if(!pBackend->post(NULL, NULL, params)){
+			delete params;
 		}
 	}
 	
@@ -97,21 +92,16 @@ void Worker::closeClient(Connection *client)
 	//后端通知
 	Config *pConfig = Config::getInstance();
 	if(pConfig->bEventClose){
-		Backend *backend = new Backend(pEventLoop, NULL, NULL);
-		backend->copyParam(pData->params);
-		backend->addParam("EVENT", sizeof("EVENT") - 1, "2", 1);
-		backend->setCloseHandler(EV_CB(this, Worker::onBackendClose));
-		backend->setResponseHandler(EV_CB(this, Worker::onBackendResponse));
-		if(!backend->run()){
-			delete backend;
+		Buffer *params = new Buffer(pData->params);
+		Backend::makeParam(*params, "EVENT", sizeof("EVENT") - 1, "2", 1);
+		if(!pBackend->post(NULL, NULL, params)){
+			delete params;
 		}
 	}
 	
 	//释放后端请求
-	for(BackendList::const_iterator it = pData->backends.begin(); it != pData->backends.end(); ++it){
-		Backend *backend = it->first;
-		backend->setClient(NULL);
-		backend->shutdown();
+	for(RequestList::const_iterator it = pData->requests.begin(); it != pData->requests.end(); ++it){
+		pBackend->abort(it->first);
 	}
 	
 	//取消频道订阅
@@ -177,7 +167,7 @@ void Worker::sendToClientByDefault(Connection *conn, const char *data, int len)
 
 void Worker::sendToClientByScript(Connection *conn, Buffer *msg)
 {
-	ClientData *pData = (ClientData*)conn->getData();
+	ClientData *pData = static_cast<ClientData*>(conn->getData());
 	Buffer resp;
 	int ret = pScript->procWrite(conn, pData->nrequest, msg, &resp);
 	if(ret > 0){
@@ -274,7 +264,7 @@ void Worker::onMessage(Connection *client)
 {
 	Buffer *pBuffer = client->getBuffer();
 	Config *pConfig = Config::getInstance();
-	ClientData *pData = (ClientData*)client->getData();
+	ClientData *pData = static_cast<ClientData*>(client->getData());
 	
 	LOG("client message, fd=%d, len=%d", client->getSocket().getFd(), pBuffer->size());
 	
@@ -334,15 +324,9 @@ void Worker::onMessage(Connection *client)
 	
 		//create request
 		if(!msg->empty()){
-			Backend *backend = new Backend(pEventLoop, client, msg);
-			backend->copyParam(pData->params);
-			backend->setCloseHandler(EV_CB(this, Worker::onBackendClose));
-			backend->setResponseHandler(EV_CB(this, Worker::onBackendResponse));
-			if(backend->run()){
-				pData->backends[backend] = 1;
-			}else{
-				delete backend;
-				LOG_ERR("not found backend server");
+			RequestContext *ctx = pBackend->post(client, msg, &pData->params);
+			if(ctx){
+				pData->requests[ctx] = 1;
 			}
 		}
 		
@@ -353,27 +337,26 @@ void Worker::onMessage(Connection *client)
 	}
 }
 
-void Worker::onBackendResponse(Backend *backend)
+void Worker::onBackendHandler(RequestContext *ctx)
 {
 	LOG("backend response");
-	Buffer &resp = backend->getResponse();
-	Connection *client = backend->getClient();
-	if(client && resp.size()){
-		sendToClient(client, &resp);
-	}
-}
-
-void Worker::onBackendClose(Backend *backend)
-{
-	LOG("backend close, conn=%p", backend);
 	
-	Connection *client = backend->getClient();
+	Buffer *resp = ctx->rep;
+	Connection *client = ctx->client;
+	
 	if(client){
-		ClientData *pClientData = (ClientData*)client->getData();
-		pClientData->backends.erase(backend);
+		//unbinding request
+		ClientData *pdata = static_cast<ClientData*>(client->getData());
+		pdata->requests.erase(ctx);
+		
+		if(!ctx->abort && resp && !resp->empty()){
+			sendToClient(client, resp);
+		}
+		
+		delete ctx->req;
+	}else{
+		delete ctx->params;
 	}
-	
-	delete backend;
 }
 
 void Worker::onRouterMessage(Connection *router)
@@ -761,22 +744,15 @@ void Worker::proc()
 	//init router
 	initRouter();
 	
-	//backend env
-	char root[256];
-	char name[256];
-	int rootlen = sprintf(root, "%s/%s", cfg->sFastcgiRoot.c_str(), cfg->sFastcgiFile.c_str());
-	int namelen = sprintf(name, "/%s", cfg->sFastcgiFile.c_str()); 
-	Backend::addSharedParam("REQUEST_METHOD", strlen("REQUEST_METHOD"), "POST", strlen("POST"));
-	Backend::addSharedParam("SCRIPT_FILENAME", strlen("SCRIPT_FILENAME"), root, rootlen);
-	Backend::addSharedParam("SCRIPT_NAME", strlen("SCRIPT_NAME"), name, namelen);
-	Backend::addSharedParam("DOCUMENT_ROOT", strlen("DOCUMENT_ROOT"), cfg->sFastcgiRoot.c_str(), cfg->sFastcgiRoot.size());
-	
-	//backend env from config.lua
-	FastcgiParams::const_iterator it;
-	for(it = cfg->arFastcgiParams.begin(); it != cfg->arFastcgiParams.end(); ++it){
-		std::string k = it->first;
-		std::string v = it->second;
-		Backend::addSharedParam(k.c_str(), k.size(), v.c_str(), v.size());
+	//init backend
+	pBackend = new Backend(pEventLoop);
+	pBackend->setHandler(EV_CB(this, Worker::onBackendHandler));
+	for(FastcgiParams::const_iterator it = cfg->arFastcgiParams.begin(); 
+		it != cfg->arFastcgiParams.end(); ++it)
+	{
+		const std::string &k = it->first;
+		const std::string &v = it->second;
+		pBackend->addParam(k.c_str(), k.size(), v.c_str(), v.size());
 	}
 	
 	LOG("worker started, pipefd=%d", nPipefd);

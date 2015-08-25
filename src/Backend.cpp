@@ -1,3 +1,4 @@
+#include <algorithm>
 #include "fooking.h"
 #include "Backend.h"
 #include "Log.h"
@@ -36,131 +37,174 @@
 
 NS_USING;
 
-Buffer Backend::bSharedParams;
-
-Backend::Backend(EventLoop *loop, Connection *client, Buffer *request):
+Backend::Backend(EventLoop *loop):
 	pLoop(loop),
-	pClient(client),
-	pBackend(NULL),
-	pRequest(request)
+	nRoll(0),
+	nIdleTop(0),
+	arrIdleBackends(NULL)
 {
-	Config *pConfig = Config::getInstance();
-	int sz = sizeof(unsigned int) * pConfig->arrBackendServer.size();
-	pServerFail = (unsigned int*)zmalloc(sz);
-	memset(pServerFail, 0, sz);
-	nWeights = pConfig->nMaxBackendWeights;
+	EV_CB_INIT(cbHandler);
+	
+	Config *cc = Config::getInstance();
+	nServers = cc->arrBackendServer.size();
+	nKeepalive = cc->nBackendKeepalive;
+	nConnectTimeout = cc->nBackendConnectTimeout;
+	nReadTimeout = cc->nBackendReadTimeout;
+	
+	//init roll
+	for(int n = 0; n < nServers; ++n)
+	{
+		BackendOption &opt = cc->arrBackendServer[n];
+		
+		if(opt.weight <= 0 || (opt.type != SOCKET_TCP && opt.type != SOCKET_UNIX)){
+			continue;
+		}
+		
+		for(int i = 0; i < opt.weight; ++i){
+			arrServerRolls.push_back(n);
+		}
+	}
+	
+	//shuffle
+	std::random_shuffle(arrServerRolls.begin(), arrServerRolls.end());
+	
+	//keepalive stack
+	if(nKeepalive){
+		arrIdleBackends = (RequestContext**)zmalloc(sizeof(RequestContext*) * nKeepalive);
+	}
 }
 
 Backend::~Backend()
 {
-	shutdown();
-	zfree(pServerFail);
-	delete pRequest;
+	//TODO
 }
 
-bool Backend::run()
+RequestContext* Backend::post(Connection *client, Buffer *req, Buffer *params)
 {
-	Config *pConfig = Config::getInstance();
-	int r = utils::randInt(1, nWeights);
-	int nserver = pConfig->arrBackendServer.size();
-	int start = utils::randInt(0, nserver - 1);
-	int old = start;
+	RequestContext *ctx = NULL;
 	
-	do{
-		if(pServerFail[start] < BACKEND_RETRY_MAX){
-			BackendOption &opt = pConfig->arrBackendServer[start];
-			r-= opt.weight;
-			if(r <= 0 && (opt.type == SOCKET_TCP || opt.type == SOCKET_UNIX))
-			{
-				//创建连接
-				Connection *backend = new Connection(pLoop);
-				backend->setConnectHandler(EV_CB(this, Backend::onConnect));
-				backend->setMessageHandler(EV_CB(this, Backend::onMessage));
-				backend->setCloseHandler(EV_CB(this, Backend::onClose));
-				if(pConfig->nBackendTimeout){
-					backend->setTimeout(pConfig->nBackendTimeout * 1000);
-				}
-				if(opt.type == SOCKET_TCP){
-					LOG("backend connect to %s:%d", opt.host.c_str(), opt.port);
-					backend->connectTcp(opt.host.c_str(), opt.port);
-				}else{
-					LOG("backend connect to unix:%s", opt.host.c_str());
-					backend->connectUnix(opt.host.c_str());
-				}
-				
-				pBackend = backend;
-				nBackendId = start;
-				
-				return true;
-			}
-		}
+	if(nKeepalive && nIdleTop){
+		ctx = arrIdleBackends[--nIdleTop];
 		
-		if(++start >= nserver){
-			start = 0;
-		}
+		//request
+		ctx->client = client;
+		ctx->req = req;
+		ctx->params = params;
+		ctx->abort = 0;
+		ctx->timer = 0;
+		ctx->index = 0;
+		request(ctx);
 		
-	}while(old != start);
-	
-	LOG_ERR("Can't found available backend server, Please check BACKEND_SERVER");
-	
-	return false;
-}
-
-void Backend::shutdown()
-{
-	if(pBackend){
-		delete pBackend;
-		pBackend = NULL;
+		return ctx;
 	}
+	
+	ctx = (RequestContext*)zmalloc(sizeof(RequestContext));
+	memset(ctx, 0, sizeof(RequestContext));
+	ctx->client = client;
+	ctx->req = req;
+	ctx->params = params;
+	
+	if(connect(ctx)){
+		return ctx;
+	}
+	
+	delete ctx;
+	
+	return NULL;
 }
 
 void Backend::onConnect(Connection *conn)
 {
 	LOG("backend connected, conn=%p, fd=%d", conn, conn->getSocket().getFd());
 	
-	request();
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	if(ctx->timer){
+		pLoop->stopTimer(ctx->timer);
+		ctx->timer = 0;
+	}
+	
+	request(ctx);
 }
 
 void Backend::onMessage(Connection *conn)
 {
 	LOG("backend data, conn=%p", conn);
 	
-	if(response()){
-		EV_INVOKE(cbResponse, this);
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	if(response(ctx)){
+		//invoke
+		EV_INVOKE(cbHandler, ctx);
+		
+		//clear response
+		if(ctx->rep){
+			ctx->rep->clear();
+		}
+		
+		//stop timer
+		if(ctx->timer){
+			pLoop->stopTimer(ctx->timer);
+			ctx->timer = 0;
+		}
+		
+		//free
+		if(nKeepalive){
+			if(nIdleTop >= nKeepalive){
+				conn->close();
+			}else{
+				arrIdleBackends[nIdleTop++] = ctx;
+				ctx->index = nIdleTop;
+			}
+		}
 	}
 }
 
 void Backend::onClose(Connection *conn)
 {
-	bool retry = false;
 	int err = conn->getError();
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	
+	//stop timer
+	if(ctx->timer){
+		pLoop->stopTimer(ctx->timer);
+	}
+	
 	if(err){
 		LOG_ERR("backend error=%d, errstr=%s", err, strerror(err));
 		
 		//retry connect
 		if(!conn->isConnected()){
-			retry = true;
+			if(ctx->fails == NULL){
+				size_t sz = nServers * sizeof(uint8_t);
+				ctx->fails = (uint8_t*)zmalloc(sz);
+				memset(ctx->fails, 0, sz);
+			}
 			
-			if(++pServerFail[nBackendId] >= BACKEND_RETRY_MAX){
-				Config *pCfg = Config::getInstance();
-				nWeights-= pCfg->arrBackendServer[nBackendId].weight;
-				if(nWeights <= 0){
-					retry = false;
-				}
+			ctx->fails[ctx->serverid]++;
+			
+			if(connect(ctx)){
+				return ;
+			}else{
+				abort(ctx);
+				EV_INVOKE(cbHandler, ctx);
 			}
 		}
 	}else{
 		LOG("backend close, conn=%p", conn);
 	}
 	
-	//release
-	shutdown();
-	
-	if(retry && run()){
-		return ;
+	//clear stack
+	if(ctx->index){
+		if(nIdleTop == ctx->index){
+			nIdleTop--;
+		}else{
+			arrIdleBackends[ctx->index - 1] = arrIdleBackends[--nIdleTop];
+		}
 	}
 	
-	EV_INVOKE(cbClose, this);
+	zfree(ctx->fails);
+	delete conn;
+	delete ctx->rep;
+	zfree(ctx);
 }
 
 void Backend::onWriteComplete(Connection *conn)
@@ -168,63 +212,128 @@ void Backend::onWriteComplete(Connection *conn)
 	LOG("backend write completed");
 }
 
-bool Backend::request()
+void Backend::onTimeout(TimerId id, Connection *conn)
 {
+	LOG("backend read timeout");
+	
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	
+	abort(ctx);
+	EV_INVOKE(cbHandler, ctx);
+	conn->close();
+}
+
+bool Backend::connect(RequestContext *ctx)
+{
+	Config *cc = Config::getInstance();
+	int old = nRoll;
+	
+	do{
+		int serverid = arrServerRolls[nRoll];
+		if(!ctx->fails || ctx->fails[serverid] < BACKEND_RETRY_MAX){
+			//创建连接
+			BackendOption &opt = cc->arrBackendServer[serverid];
+			Connection *conn = new Connection(pLoop);
+			conn->setConnectHandler(EV_CB(this, Backend::onConnect));
+			conn->setMessageHandler(EV_CB(this, Backend::onMessage));
+			conn->setCloseHandler(EV_CB(this, Backend::onClose));
+			if(nConnectTimeout){
+				ctx->timer = pLoop->setTimer(nConnectTimeout * 1000, EV_TIMER_CB(this, Backend::onTimeout), conn);
+			}
+			
+			if(opt.type == SOCKET_TCP){
+				LOG("backend connect to %s:%d", opt.host.c_str(), opt.port);
+				conn->connectTcp(opt.host.c_str(), opt.port);
+			}else{
+				LOG("backend connect to unix:%s", opt.host.c_str());
+				conn->connectUnix(opt.host.c_str());
+			}
+			
+			//binding context
+			ctx->serverid = serverid;
+			ctx->backend = conn;
+			conn->setData(ctx);
+			
+			return true;
+		}
+		
+		if(++nRoll >= arrServerRolls.size()){
+			nRoll = 0;
+		}
+	}while(old != nRoll);
+	
+	LOG_ERR("Can't found available backend server, Please check BACKEND_SERVER");
+	
+	return false;
+}
+
+bool Backend::request(RequestContext *ctx)
+{
+	Connection *conn = ctx->backend;
 	Buffer params;
 	
 	//header
 	FastCGIHeader header = makeHeader(FCGI_BEGIN_REQUEST, 1, sizeof(FastCGIBeginRequest), 0);
-	pBackend->send((const char*)&header, sizeof(FastCGIHeader));
+	conn->send((const char*)&header, sizeof(FastCGIHeader));
 	
 	//begin request
-	FastCGIBeginRequest begin = makeBeginRequest(FCGI_RESPONDER, 0);
-	pBackend->send((const char*)&begin, sizeof(FastCGIBeginRequest));
+	FastCGIBeginRequest begin = makeBeginRequest(FCGI_RESPONDER, nKeepalive ? 1 : 0);
+	conn->send((const char*)&begin, sizeof(FastCGIBeginRequest));
 	
 	//content length
-	if(pRequest && !pRequest->empty()){
+	if(ctx->req && !ctx->req->empty()){
 		char clbuf[32];
-		int clsize = sprintf(clbuf, "%u", pRequest->size());
+		int clsize = sprintf(clbuf, "%u", ctx->req->size());
 		makeParam(params, "CONTENT_LENGTH", sizeof("CONTENT_LENGTH") - 1, clbuf, clsize);
 	}
 	
 	//params begin
 	FastCGIHeader hdrParam = makeHeader(FCGI_PARAMS, 1, 
-		bSharedParams.size() + bParams.size() + params.size(), 0);
-	pBackend->send((const char*)&hdrParam, sizeof(FastCGIHeader));
+		bParams.size() + (ctx->params ? ctx->params->size() : 0) + params.size(), 0);
+	conn->send((const char*)&hdrParam, sizeof(FastCGIHeader));
 	
 	//shared params
-	if(!bSharedParams.empty())
-		pBackend->send(bSharedParams);
+	if(!bParams.empty()){
+		conn->send(bParams);
+	}
 	
 	//extension params
-	if(!bParams.empty())
-		pBackend->send(bParams);
+	if(ctx->params && !ctx->params->empty()){
+		conn->send(*ctx->params);
+	}
 		
 	//local params
-	if(!params.empty())
-		pBackend->send(params);
+	if(!params.empty()){
+		conn->send(params);
+	}
 	
 	//params end
 	FastCGIHeader endParam = makeHeader(FCGI_PARAMS, 1, 0, 0);
-	pBackend->send((const char*)&endParam, sizeof(FastCGIHeader));
+	conn->send((const char*)&endParam, sizeof(FastCGIHeader));
 	
-	//stdin bein
-	if(pRequest && !pRequest->empty()){
-		FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, pRequest->size(), 0);
-		pBackend->send((const char*)&inh, sizeof(FastCGIHeader));
-		pBackend->send(pRequest->data(), pRequest->size());
+	//stdin begin
+	if(ctx->req && !ctx->req->empty()){
+		FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, ctx->req->size(), 0);
+		conn->send((const char*)&inh, sizeof(FastCGIHeader));
+		conn->send(ctx->req->data(), ctx->req->size());
 	}
 	
 	//stdin end
-	FastCGIHeader inend = makeHeader(FCGI_STDIN, 1, 0, 0);
-	pBackend->send((const char*)&inend, sizeof(FastCGIHeader));
+	FastCGIHeader endh = makeHeader(FCGI_STDIN, 1, 0, 0);
+	conn->send((const char*)&endh, sizeof(FastCGIHeader));
+	
+	//set timer
+	if(nReadTimeout){
+		ctx->timer = pLoop->setTimer(nReadTimeout * 1000, EV_TIMER_CB(this, Backend::onTimeout), conn);
+	}
 	
 	return true;
 }
 
-bool Backend::response()
+bool Backend::response(RequestContext *ctx)
 {
-	Buffer *pBuffer = pBackend->getBuffer();
+	Connection *conn = ctx->backend;
+	Buffer *pBuffer = conn->getBuffer();
 	const char *inbuf = pBuffer->data();
 	size_t inlen = pBuffer->size();
 	size_t offset = 0;
@@ -273,10 +382,14 @@ bool Backend::response()
 			{
 				FastCGIBody body = parse(dataptr, contentLength);
 				if(body.length){
+					if(!ctx->rep){
+						ctx->rep = new Buffer();
+					}
+					
 					if(body.offset >= 0){
-						mResponse.append(body.ptr + body.offset, body.length);
+						ctx->rep->append(body.ptr + body.offset, body.length);
 					}else{
-						mResponse.append(body.ptr + body.total + body.offset, body.length);
+						ctx->rep->append(body.ptr + body.total + body.offset, body.length);
 					}
 				}
 				break;
@@ -310,11 +423,6 @@ bool Backend::response()
 void Backend::addParam(const char *name, int namelen, const char *value, int vallen)
 {
 	makeParam(bParams, name, namelen, value, vallen);
-}
-
-void Backend::addSharedParam(const char *name, int namelen, const char *value, int vallen)
-{
-	makeParam(bSharedParams, name, namelen, value, vallen);
 }
 
 FastCGIHeader Backend::makeHeader(int type, int requestId, int contentLength, int paddingLength)

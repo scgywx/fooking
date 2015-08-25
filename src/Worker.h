@@ -23,12 +23,12 @@ typedef struct IdleNode{
 	struct IdleNode *next;
 }IdleNode;
 
-typedef hash_map<Backend*, int> BackendList;
+typedef hash_map<RequestContext*, int> RequestList;
 typedef struct{
 	uint32_t	nrequest;
 	Session		session;
 	Buffer		params;
-	BackendList	backends;
+	RequestList	requests;
 	ChannelSet	channels;
 	IdleNode*	idle;
 }ClientData;
@@ -54,8 +54,7 @@ private:
 	void 				onMessage(Connection *conn);
 	void 				onClose(Connection *conn);
 	//backend process handler
-	void				onBackendResponse(Backend *conn);
-	void				onBackendClose(Backend *conn);
+	void				onBackendHandler(RequestContext *ctx);
 	//router process handler
 	void				onRouterMessage(Connection *conn);
 	void				onRouterClose(Connection *conn);
@@ -89,9 +88,9 @@ private:
 	ClientList			arrClients;
 	Connection*			pRouter;
 	Server*				pServer;
+	Backend*			pBackend;
 	ChannelList			arrChannels;
 	int					nRouterReconnect;
-	BackendList			arrExpireBackends;
 	bool				bHeldAcceptLock;
 	IdleNode*			pIdleHead;
 	IdleNode*			pIdleTail;

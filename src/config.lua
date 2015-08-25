@@ -1,6 +1,6 @@
 --监听IP和端口
 HOST = "0.0.0.0";
-PORT = 9001;
+PORT = 9005;
 
 --守护进行
 --DAEMONIZE = 1;
@@ -39,13 +39,15 @@ ROUTER_HOST = "127.0.0.1";
 ROUTER_PORT = 9010;
 
 --指定时间内连接没有数据包请求，将会踢掉连接(单位秒),为0不处理
-IDLE_TIME = 30;
+IDLE_TIME = 0;
 
 --脚本
 SCRIPT_FILE = "script.lua";
 
 --后端服务器列表
-BACKEND_TIMEOUT = 30;
+BACKEND_CONNECT_TIMEOUT = 5;--连接超时时间(单位秒)
+BACKEND_READ_TIMEOUT = 10;--数据接收超时间(单位秒)
+BACKEND_KEEPALIVE = 0;--最大维持长连接数量
 BACKEND_SERVER = {
 	["127.0.0.1:9000"] = 5,--第一列是socket选项，第二列是权重(跟nginx的upstream差不多一个意思)
 };
@@ -58,10 +60,14 @@ EVENT_CONNECT = 0;
 --请求头会有EVENT=2
 EVENT_CLOSE = 1;
 
---fastcgi params(仅当PROTOCOL = 2时有效)
-FASTCGI_ROOT = "/home/fooking/example/chat";
+--fastcgi params
+FASTCGI_ROOT = "/home/fooking/example/chat/";
 FASTCGI_FILE = "gateway.php";
 FASTCGI_PARAMS = {
+	["REQUEST_METHOD"] = "POST",
+	["SCRIPT_FILENAME"] = FASTCGI_ROOT..FASTCGI_FILE,
+	["SCRIPT_NAME"] = FASTCGI_FILE,
+	["DOCUMENT_ROOT"] = FASTCGI_ROOT,
 	["SERVER_NAME"] = "www.myhost.com",
 	["QUERY_STRING"] = "a=10&b=20",
 };

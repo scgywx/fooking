@@ -61,8 +61,12 @@ bool Config::load(const char *filename)
 		return false;
 	}
 	
-	//backend server list
-	nBackendTimeout = readInt("BACKEND_TIMEOUT");
+	//backend option
+	nBackendConnectTimeout = readInt("BACKEND_CONNECT_TIMEOUT");
+	nBackendReadTimeout = readInt("BACKEND_READ_TIMEOUT");
+	nBackendKeepalive = readInt("BACKEND_KEEPALIVE");
+	
+	//backend server
 	lua_getglobal(pState, "BACKEND_SERVER");
 	if(lua_isstring(pState, -1)){
 		const char *val = lua_tostring(pState, -1);
@@ -105,10 +109,6 @@ bool Config::load(const char *filename)
 	//router option
 	sRouterHost = readString("ROUTER_HOST");
 	nRouterPort = readInt("ROUTER_PORT");
-	
-	//fastcgi
-	sFastcgiRoot = readString("FASTCGI_ROOT");
-	sFastcgiFile = readString("FASTCGI_FILE");
 	
 	//fastcgi params
 	lua_getglobal(pState, "FASTCGI_PARAMS");

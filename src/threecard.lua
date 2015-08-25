@@ -1,6 +1,6 @@
 --监听IP和端口
 HOST = "0.0.0.0";
-PORT = 9002;
+PORT = 9005;
 
 --守护进行
 --DAEMONIZE = 1;
@@ -56,12 +56,16 @@ EVENT_CONNECT = 0;
 
 --关闭连接是否通知(0-不通知, 1-通知)
 --请求头会有EVENT=2
-EVENT_CLOSE = 0;
+EVENT_CLOSE = 1;
 
 --fastcgi params(仅当PROTOCOL = 2时有效)
-FASTCGI_ROOT = "/home/fooking/example/threecard";
+FASTCGI_ROOT = "/home/fooking/example/threecard/";
 FASTCGI_FILE = "gateway.php";
 FASTCGI_PARAMS = {
+	["REQUEST_METHOD"] = "POST",
+	["SCRIPT_FILENAME"] = FASTCGI_ROOT..FASTCGI_FILE,
+	["SCRIPT_NAME"] = FASTCGI_FILE,
+	["DOCUMENT_ROOT"] = FASTCGI_ROOT,
 	["SERVER_NAME"] = "www.myhost.com",
 	["QUERY_STRING"] = "a=10&b=20",
 };

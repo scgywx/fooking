@@ -56,7 +56,6 @@ public:
 	short				nWorkers;//进程数
 	int					nServerId;//服务器id
 	int					nMaxClients;//最大连接数
-	int					nProtocol;//协议
 	int					nSendBufferSize;//最大发送缓存区大小
 	int					nRecvBufferSize;//最大接受缓冲区大小
 	std::string			sLogFile;//日志文件
@@ -65,10 +64,10 @@ public:
 	short				nRouterPort;//路由服务器port
 	std::string			sScriptFile;//script
 	BackendServer		arrBackendServer;//后端服务器
-	int					nBackendTimeout;//后端超时时间		
+	int					nBackendConnectTimeout;//后端连接超时时间
+	int					nBackendReadTimeout;//后端接收数据超时时间
+	int					nBackendKeepalive;//长连接维持数量
 	int					nMaxBackendWeights;//后端服务器总权重值
-	std::string			sFastcgiRoot;
-	std::string			sFastcgiFile;
 	FastcgiParams		arFastcgiParams;
 	int					nIdleTime;//空闲时间
 };

@@ -38,11 +38,11 @@ namespace __gnu_cxx
 	};
 	
 	template<>
-	struct hash<NS_NAME::Backend*>
+	struct hash<NS_NAME::RequestContext*>
 	{
-		size_t operator()(NS_NAME::Backend* const &p) const
+		size_t operator()(NS_NAME::RequestContext* const &p) const
 		{
-			return generic_hash_func((const unsigned char*)&p, sizeof(NS_NAME::Backend*));
+			return generic_hash_func((const unsigned char*)&p, sizeof(NS_NAME::RequestContext*));
 		}
 	};
 }
