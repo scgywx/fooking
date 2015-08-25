@@ -61,6 +61,7 @@ EVENT_CONNECT = 0;
 EVENT_CLOSE = 1;
 
 --fastcgi params
+FASTCGI_PREFIX = "";--go下要使用HTTP_作为前缀，否则拿不了SESSIONID和EVENT
 FASTCGI_ROOT = "/home/fooking/example/chat/";
 FASTCGI_FILE = "gateway.php";
 FASTCGI_PARAMS = {

@@ -30,6 +30,7 @@ Worker::~Worker()
 void Worker::createClient(int fd, const char *host, int port)
 {
 	//创建session对像
+	Config *cc = Config::getInstance();
 	Session sess(nPid, fd);
 	LOG("new client, fd=%d, host=%s, port=%d, sid=%s", fd, host, port, sess.getId());
 	
@@ -39,9 +40,12 @@ void Worker::createClient(int fd, const char *host, int port)
 	int nPort = sprintf(szPort, "%d", port);
 	pData->session = sess;
 	pData->nrequest = 0;
+	std::string env(cc->sFastcgiPrefix);
+	env+= "SESSIONID";
+	
 	Backend::makeParam(pData->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, host, strlen(host));
 	Backend::makeParam(pData->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
-	Backend::makeParam(pData->params, "SESSIONID", sizeof("SESSIONID") - 1, sess.getId(), SID_LENGTH);
+	Backend::makeParam(pData->params, env.c_str(), env.size(), sess.getId(), SID_LENGTH);
 	
 	//创建连接对像
 	Connection *client = new Connection(pEventLoop, fd);
@@ -60,10 +64,12 @@ void Worker::createClient(int fd, const char *host, int port)
 	sendToRouter(ROUTER_MSG_CONN, SID_LENGTH, sess.getId(), 0, NULL);
 	
 	//backend通知
-	Config *pConfig = Config::getInstance();
-	if(pConfig->bEventConnect){
+	if(cc->bEventConnect){
 		Buffer *params = new Buffer(pData->params);
-		Backend::makeParam(*params, "EVENT", sizeof("EVENT") - 1, "1", 1);
+		std::string env(cc->sFastcgiPrefix);
+		env+= "EVENT";
+		
+		Backend::makeParam(*params, env.c_str(), env.size(), "1", 1);
 		if(!pBackend->post(NULL, NULL, params)){
 			delete params;
 		}
@@ -75,7 +81,7 @@ void Worker::createClient(int fd, const char *host, int port)
 	}
 	
 	//idle添加
-	if(pConfig->nIdleTime > 0){
+	if(cc->nIdleTime > 0){
 		addIdleNode(client);
 	}
 }
@@ -90,10 +96,13 @@ void Worker::closeClient(Connection *client)
 	sendToRouter(ROUTER_MSG_CLOSE, SID_LENGTH, pData->session.getId(), 0, NULL);
 	
 	//后端通知
-	Config *pConfig = Config::getInstance();
-	if(pConfig->bEventClose){
+	Config *cc = Config::getInstance();
+	if(cc->bEventClose){
 		Buffer *params = new Buffer(pData->params);
-		Backend::makeParam(*params, "EVENT", sizeof("EVENT") - 1, "2", 1);
+		std::string env(cc->sFastcgiPrefix);
+		env+= "EVENT";
+		
+		Backend::makeParam(*params, env.c_str(), env.size(), "2", 1);
 		if(!pBackend->post(NULL, NULL, params)){
 			delete params;
 		}
@@ -130,7 +139,7 @@ void Worker::closeClient(Connection *client)
 	}
 	
 	//删除idle
-	if(pConfig->nIdleTime > 0){
+	if(cc->nIdleTime > 0){
 		delIdleNode(client);
 	}
 	

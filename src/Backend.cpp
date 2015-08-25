@@ -35,7 +35,7 @@
 
 #define BACKEND_RETRY_MAX		1
 
-#define ALIGN(size, align) ((size + align - 1) & (~(align - 1)))
+#define ALIGN(size) ((size & 7) ? (8 - (size & 7)) : 0)
 
 NS_USING;
 
@@ -294,7 +294,7 @@ bool Backend::request(RequestContext *ctx)
 	//params begin
 	static char *paddings = "\0\0\0\0\0\0\0\0";
 	int pmsz = bParams.size() + (ctx->params ? ctx->params->size() : 0) + params.size();
-	int pdsz = ALIGN(pmsz, 8);
+	int pdsz = ALIGN(pmsz);
 	FastCGIHeader hdrParam = makeHeader(FCGI_PARAMS, 1, pmsz, pdsz);
 	conn->send((const char*)&hdrParam, sizeof(FastCGIHeader));
 	
@@ -324,7 +324,7 @@ bool Backend::request(RequestContext *ctx)
 	
 	//stdin begin
 	if(ctx->req && !ctx->req->empty()){
-		int rpdsz = ALIGN(ctx->req->size(), 8);
+		int rpdsz = ALIGN(ctx->req->size());
 		FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, ctx->req->size(), rpdsz);
 		conn->send((const char*)&inh, sizeof(FastCGIHeader));
 		conn->send(ctx->req->data(), ctx->req->size());

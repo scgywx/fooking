@@ -68,7 +68,8 @@ public:
 	int					nBackendReadTimeout;//后端接收数据超时时间
 	int					nBackendKeepalive;//长连接维持数量
 	int					nMaxBackendWeights;//后端服务器总权重值
-	FastcgiParams		arFastcgiParams;
+	std::string			sFastcgiPrefix;//fastcgi参数前缀
+	FastcgiParams		arFastcgiParams;//fastcgi参数列表
 	int					nIdleTime;//空闲时间
 };
 NS_END

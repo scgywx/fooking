@@ -111,6 +111,7 @@ bool Config::load(const char *filename)
 	nRouterPort = readInt("ROUTER_PORT");
 	
 	//fastcgi params
+	sFastcgiPrefix = readString("FASTCGI_PREFIX");
 	lua_getglobal(pState, "FASTCGI_PARAMS");
 	if(lua_istable(pState, -1)){
 		lua_pushnil(pState);
