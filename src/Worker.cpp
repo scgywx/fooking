@@ -88,7 +88,7 @@ void Worker::createClient(int fd, const char *host, int port)
 
 void Worker::closeClient(Connection *client)
 {
-	ClientData *pData = (ClientData*)client->getData();
+	ClientData *pData = static_cast<ClientData*>(client->getData());
 	std::string sid = pData->session.getId();
 	LOG("close client, fd=%d, sid=%s", client->getSocket().getFd(), sid.c_str());
 	
@@ -350,16 +350,17 @@ void Worker::onBackendHandler(RequestContext *ctx)
 {
 	LOG("backend response");
 	
-	Buffer *resp = ctx->rep;
 	Connection *client = ctx->client;
-	
 	if(client){
-		//unbinding request
-		ClientData *pdata = static_cast<ClientData*>(client->getData());
-		pdata->requests.erase(ctx);
-		
-		if(!ctx->abort && resp && !resp->empty()){
-			sendToClient(client, resp);
+		if(!ctx->abort){
+			//unbinding request
+			ClientData *pdata = static_cast<ClientData*>(client->getData());
+			pdata->requests.erase(ctx);
+			
+			//send response
+			if(ctx->rep && !ctx->rep->empty()){
+				sendToClient(client, ctx->rep);
+			}
 		}
 		
 		delete ctx->req;

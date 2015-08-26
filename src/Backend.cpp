@@ -37,6 +37,15 @@
 
 #define ALIGN(size) ((size & 7) ? (8 - (size & 7)) : 0)
 
+#define CTX_RELEASE(_ctx) if(nKeepalive){\
+	if(nIdleTop >= nKeepalive){\
+		_ctx->backend->close();\
+	}else{\
+		arrIdleBackends[nIdleTop++] = _ctx;\
+		_ctx->index = nIdleTop;\
+	}\
+}
+	
 NS_USING;
 
 Backend::Backend(EventLoop *loop):
@@ -125,7 +134,12 @@ void Backend::onConnect(Connection *conn)
 		ctx->timer = 0;
 	}
 	
-	request(ctx);
+	if(ctx->abort){
+		EV_INVOKE(cbHandler, ctx);
+		CTX_RELEASE(ctx);
+	}else{
+		request(ctx);
+	}
 }
 
 void Backend::onMessage(Connection *conn)
@@ -148,17 +162,8 @@ void Backend::onMessage(Connection *conn)
 			ctx->timer = 0;
 		}
 		
-		//free
-		if(nKeepalive){
-			if(nIdleTop >= nKeepalive){
-				conn->close();
-			}else{
-				arrIdleBackends[nIdleTop++] = ctx;
-				ctx->index = nIdleTop;
-			}
-		}/*else{
-			conn->close();
-		*/
+		//release
+		CTX_RELEASE(ctx);
 	}
 }
 
@@ -196,7 +201,7 @@ void Backend::onClose(Connection *conn)
 		LOG("backend close, conn=%p", conn);
 	}
 	
-	//clear stack
+	//把栈顶的元素移到当前位置来
 	if(ctx->index){
 		if(nIdleTop == ctx->index){
 			nIdleTop--;
@@ -273,6 +278,7 @@ bool Backend::connect(RequestContext *ctx)
 
 bool Backend::request(RequestContext *ctx)
 {
+	static const char *paddings = "\0\0\0\0\0\0\0\0";
 	Connection *conn = ctx->backend;
 	Buffer params;
 	
@@ -292,7 +298,6 @@ bool Backend::request(RequestContext *ctx)
 	}
 	
 	//params begin
-	static char *paddings = "\0\0\0\0\0\0\0\0";
 	int pmsz = bParams.size() + (ctx->params ? ctx->params->size() : 0) + params.size();
 	int pdsz = ALIGN(pmsz);
 	FastCGIHeader hdrParam = makeHeader(FCGI_PARAMS, 1, pmsz, pdsz);

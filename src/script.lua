@@ -215,15 +215,17 @@ function wsDecode(s)
 	end
 	
 	local body = "";
-	if hashmask == 1 then
-		local m1,m2,m3,m4 = string.byte(mask, 1, 4);
-		local marr = {m1, m2, m3, m4};
-		
-		for i=1,length do
-			body = body .. string.char(string.byte(s, offset+i) ~ marr[(i-1)%4+1]);
+	if opcode ~= 8 then
+		if hashmask == 1 then
+			local m1,m2,m3,m4 = string.byte(mask, 1, 4);
+			local marr = {m1, m2, m3, m4};
+			
+			for i=1,length do
+				body = body .. string.char(string.byte(s, offset+i) ~ marr[(i-1)%4+1]);
+			end
+		else
+			body = string.sub(s, offset, offset + length);
 		end
-	else
-		body = string.sub(s, offset, offset + length);
 	end
 	
 	return offset+length, body;

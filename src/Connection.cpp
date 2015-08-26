@@ -157,8 +157,8 @@ void Connection::onConnect(int fd, int r, void *data)
 
 void Connection::onRead(int fd, int r, void *data)
 {
-	char buf[8192];
-	int n = sSocket.read(buf, 8192);
+	char buf[4096];
+	int n = sSocket.read(buf, 4096);
 	LOG("on read, fd=%d, recv=%d", fd, n);
 	if(n == SOCKET_ERR){
 		nError = sSocket.getError();
