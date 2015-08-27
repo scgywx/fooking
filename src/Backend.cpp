@@ -191,6 +191,7 @@ void Backend::onClose(Connection *conn)
 			ctx->fails[ctx->serverid]++;
 			
 			if(connect(ctx)){
+				delete conn;
 				return ;
 			}else{
 				abort(ctx);
@@ -203,10 +204,9 @@ void Backend::onClose(Connection *conn)
 	
 	//把栈顶的元素移到当前位置来
 	if(ctx->index){
-		if(nIdleTop == ctx->index){
-			nIdleTop--;
-		}else{
-			arrIdleBackends[ctx->index - 1] = arrIdleBackends[--nIdleTop];
+		--nIdleTop;
+		if(nIdleTop = ctx->index){
+			arrIdleBackends[ctx->index - 1] = arrIdleBackends[nIdleTop];
 		}
 	}
 	

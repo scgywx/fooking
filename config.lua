@@ -42,7 +42,7 @@ ROUTER_PORT = 9010;
 IDLE_TIME = 0;
 
 --脚本
-SCRIPT_FILE = "script.lua";
+SCRIPT_FILE = "../scripts/Websocket.lua";
 
 --后端服务器列表
 BACKEND_CONNECT_TIMEOUT = 5;--连接超时时间(单位秒)

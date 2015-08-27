@@ -227,6 +227,29 @@ bool Script::load(std::string &filename)
 	luaL_requiref(pState, "fooking.buffer", luaopen_buffer, 0);
 	luaL_requiref(pState, "fooking.connection", luaopen_connection, 0);
 	
+	//get real dir
+	char realdir[512];
+	realpath(filename.c_str(), realdir);
+	int len = strlen(realdir);
+	for(int i = len - 1; i >= 0; --i){
+		if(realdir[i] == '/'){
+			realdir[i] = 0;
+			break;
+		}
+	}
+	
+	//set package path
+	lua_getglobal(pState, "package");
+	lua_getfield(pState, -1, "path");
+	std::string pkgpath = lua_tostring(pState, -1);
+    pkgpath.append(";");
+    pkgpath.append(realdir);
+	pkgpath.append("/?.lua");
+    lua_pop(pState, 1 );
+    lua_pushstring(pState, pkgpath.c_str());
+    lua_setfield(pState, -2, "path");
+    lua_pop(pState, 1);
+	
 	//dofile
 	if(luaL_dofile(pState, filename.c_str())){
 		printf("parse config file error=%s\n", lua_tostring(pState, -1));
