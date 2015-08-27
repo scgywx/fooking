@@ -242,13 +242,13 @@ bool Script::load(std::string &filename)
 	lua_getglobal(pState, "package");
 	lua_getfield(pState, -1, "path");
 	std::string pkgpath = lua_tostring(pState, -1);
-    pkgpath.append(";");
-    pkgpath.append(realdir);
+	pkgpath.append(";");
+	pkgpath.append(realdir);
 	pkgpath.append("/?.lua");
-    lua_pop(pState, 1 );
-    lua_pushstring(pState, pkgpath.c_str());
-    lua_setfield(pState, -2, "path");
-    lua_pop(pState, 1);
+	lua_pop(pState, 1 );
+	lua_pushstring(pState, pkgpath.c_str());
+	lua_setfield(pState, -2, "path");
+	lua_pop(pState, 1);
 	
 	//dofile
 	if(luaL_dofile(pState, filename.c_str())){

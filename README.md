@@ -27,9 +27,9 @@ this example is chat room, source code in example/chat
    make   
 * Step 2(start fooking router server)   
    cd src   
-   ./fooking router.lua   
+   ./fooking ../router.lua   
 * Step 3(start fooking gateway server)   
-   ./fooking config.lua   
+   ./fooking ../config.lua   
 * Step 4(start fastcgi server, e.g php-fpm)
    service php-fpm start(if it was started please skip this step)
 * Step 5(test)
