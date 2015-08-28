@@ -15,7 +15,9 @@ Config::Config():
 
 Config::~Config()
 {
-	lua_close(pState);
+	if(pState){
+		lua_close(pState);
+	}
 }
 
 bool Config::load(const char *filename)
@@ -135,6 +137,9 @@ bool Config::load(const char *filename)
 		printf("FASTCGI_PARAMS invalid\n");
 		return false;
 	}
+	
+	lua_close(pState);
+	pState = NULL;
 	
 	return true;
 }

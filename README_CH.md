@@ -1,10 +1,11 @@
-fooking是一个分布式网关服务器，主要用于承载客户端连接，将客户端请求转发到后端逻辑服务器，
-然后把逻辑服务器返回的结果转发到客户端，他类似Nginx，你使用Nginx + FPM构建Web服务器，同时你能使用Fooking + FPM构建Socket服务器
+fooking是一个分布式网关服务器，主要用于承载客户端连接，将客户端请求转发到后端逻辑服务器，然后把逻辑服务器返回的结果转发到客户端.   
+他类似Nginx，使用Nginx + FastCGI Server(如：FPM, etc..)构建Web服务器，同时可以使用Fooking + FastCGI Server(如：FPM, etc..)构建Socket服务器.   
+
 
 # 特性
 1 动态网关添加.   
 2 每个客户端唯一SessionID.   
-3 组件(类似redis的pub/sub).   
+3 组播(类似redis的pub/sub).   
 4 服务器状态监控.   
 5 客户端事件通知(如：新连接、关闭连接).   
 6 后端无语言限制(php, python, go, nodejs, etc...).   

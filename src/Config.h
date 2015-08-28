@@ -36,6 +36,11 @@ public:
 		}
 		return psObj;
 	}
+	static void release(){
+		if(psObj){
+			delete psObj;
+		}
+	}
 	bool				load(const char *filename);
 private:
 	int 				readInt(const char *key);

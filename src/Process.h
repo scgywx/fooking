@@ -3,14 +3,12 @@
 
 NS_BEGIN
 
-#define CH_PIPE		0 //传递文件描述符
 #define CH_RELOAD	1 //重新加载配置文件
 #define CH_EXIT		2 //退出程序
 
 typedef struct{
 	uint_16	type;
-	uint_16	pid;
-	int		fd;
+	uint_16	from;
 }ChannelMsg;
 
 class Process:
@@ -18,7 +16,7 @@ class Process:
 {
 public:
 	Process();
-	~Process();
+	virtual ~Process();
 public:
 	bool start();
 	int getPipefd(){ return nPipefd; }

@@ -24,7 +24,7 @@ Worker::Worker(Master *master, int id):
 
 Worker::~Worker()
 {
-	delete pEventLoop;
+	//TODO
 }
 
 void Worker::createClient(int fd, const char *host, int port)
@@ -42,7 +42,6 @@ void Worker::createClient(int fd, const char *host, int port)
 	pData->nrequest = 0;
 	std::string env(cc->sFastcgiPrefix);
 	env+= "SESSIONID";
-	
 	Backend::makeParam(pData->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, host, strlen(host));
 	Backend::makeParam(pData->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
 	Backend::makeParam(pData->params, env.c_str(), env.size(), sess.getId(), SID_LENGTH);
@@ -55,6 +54,7 @@ void Worker::createClient(int fd, const char *host, int port)
 	client->setCloseHandler(EV_CB(this, Worker::onClose));
 	//client->setWriteCompleteHandler(EL_CB(this, Worker::onWriteComplete));
 	
+	//客户端列表更新
 	arrClients[sess.getId()] = client;
 	
 	//计数更新
@@ -222,14 +222,15 @@ void Worker::onChannel(int fd, int ev, void *data)
 	}
 	
 	switch(ch.type){
-		case CH_PIPE:
-			LOG("channel msg pipefd");
-			break;
 		case CH_RELOAD:
 			LOG("channel msg reload");
 			break;
 		case CH_EXIT:
 			LOG("channel msg exit");
+			pEventLoop->stop();
+			break;
+		default:
+			LOG("invalid type");
 			break;
 	}
 }
@@ -337,6 +338,8 @@ void Worker::onMessage(Connection *client)
 			if(ctx){
 				pData->requests[ctx] = 1;
 			}
+		}else{
+			delete msg;
 		}
 		
 		//重置idle
@@ -733,6 +736,7 @@ void Worker::proc()
 	
 	//还原信号默认处理方式
 	signal(SIGTERM, NULL);
+	signal(SIGINT, NULL);
 	signal(SIGUSR1, NULL);
 
 	//set process title
@@ -765,7 +769,30 @@ void Worker::proc()
 		pBackend->addParam(k.c_str(), k.size(), v.c_str(), v.size());
 	}
 	
+	//server running
 	LOG("worker started, pipefd=%d", nPipefd);
 	pScript = pMaster->pScript;
 	pEventLoop->run();
+	
+	//clear
+	delete pBackend;
+	delete pServer;
+	delete pEventLoop;
+	delete pScript;
+	
+	for(ClientList::const_iterator it = arrClients.begin(); it != arrClients.end(); ++it){
+		Connection *pClient = it->second;
+		ClientData *pData = static_cast<ClientData*>(pClient->getData());
+		delete pClient;
+		delete pData;
+	}
+	
+	IdleNode *idle = pIdleHead;
+	while(idle){
+		IdleNode *next = idle->next;
+		zfree(idle);
+		idle = next;
+	}
+	
+	Config::release();
 }

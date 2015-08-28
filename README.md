@@ -1,5 +1,5 @@
 fooking is distributed gateway server.It transfers client's requests to backend and send responses back with fpm protocol.  
-Just like Nginx, as building a http server with nginx and fpm, you can create a socket server with fooking.    
+Just like Nginx, as building a http server with nginx and fastcgi server(e.g fpm, etc..), you can create a socket server with fooking.    
 
 # features
 1 gateway server adding dynamicly.   

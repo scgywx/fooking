@@ -14,6 +14,8 @@
 
 NS_USING;
 
+static Master *gMaster;
+
 Master::Master(int argc, char **argv):
 	nArgc(argc),
 	pArgv(argv),
@@ -22,6 +24,7 @@ Master::Master(int argc, char **argv):
 	pScript(NULL),
 	pGlobals(NULL)
 {
+	gMaster = this;
 }
 
 Master::~Master()
@@ -88,7 +91,8 @@ void Master::start()
 	LOG_INFO("server started, listenfd=%d, port=%d", pServer->getSocket().getFd(), pConfig->nPort);
 
 	//wait worker exit
-	while(true)
+	bRunning = true;
+	while(bRunning)
 	{
 		int ret = 0;
 		int pid = ::wait(&ret);
@@ -136,6 +140,7 @@ void Master::setupSignal()
 	act.sa_flags = 0;
 	act.sa_handler = Master::procSignal;
 	sigaction(SIGTERM, &act, NULL);
+	sigaction(SIGINT, &act, NULL);
 	sigaction(SIGUSR1, &act, NULL);
 }
 
@@ -147,8 +152,19 @@ void Master::procSignal(int sig)
 			//RELOAD TODO
 			break;
 		default:
-			kill(0, SIGKILL);
+		{
+			Config *cc = Config::getInstance();
+			Master *pThis = gMaster;
+			
+			ChannelMsg msg = {CH_EXIT, 0};
+			for(int i = 0; i < cc->nWorkers; ++i){
+				pThis->pWorkers[i]->send(&msg);
+			}
+			
+			pThis->bRunning = false;
+			
 			break;
+		}
 	}
 }
 

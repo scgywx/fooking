@@ -41,26 +41,26 @@ int main(int argc, char **argv)
 	srandom(time(NULL));
 	
 	//init config
-	Config *pConfig = Config::getInstance();
-	if(!pConfig->load(argv[1])){
+	Config *cc = Config::getInstance();
+	if(!cc->load(argv[1])){
 		return -1;
 	}
 	
 	//init log
 	Log *pLog = Log::getInstance();
-	if(!pConfig->sLogFile.empty()){
-		if(pConfig->sLogFile == "stdout"){
-			pLog->init(pConfig->nLogLevel, STDOUT_FILENO);
-		}else if(pConfig->sLogFile == "stderr"){
-			pLog->init(pConfig->nLogLevel, STDERR_FILENO);
-		}else if(!pLog->init(pConfig->nLogLevel, pConfig->sLogFile.c_str())){
+	if(!cc->sLogFile.empty()){
+		if(cc->sLogFile == "stdout"){
+			pLog->init(cc->nLogLevel, STDOUT_FILENO);
+		}else if(cc->sLogFile == "stderr"){
+			pLog->init(cc->nLogLevel, STDERR_FILENO);
+		}else if(!pLog->init(cc->nLogLevel, cc->sLogFile.c_str())){
 			printf("init log failed\n");
 			return -1;
 		}
 	}
 	
 	//daemonize
-	if(pConfig->bDaemonize){
+	if(cc->bDaemonize){
 		daemonize();
 	}
 	
@@ -68,15 +68,20 @@ int main(int argc, char **argv)
 	utils::initProcTitle(argc, argv);
 	
 	//server
-	if(pConfig->bRouter){
+	if(cc->bRouter){
 		//router server
 		Router *pRouter = new Router(argc, argv);
 		pRouter->start();
+		delete pRouter;
 	}else{
 		//gateway server
 		Master *pMaster = new Master(argc, argv);
 		pMaster->start();
+		delete pMaster;
 	}
+	
+	//release config
+	Config::release();
 	
 	return 0;
 }

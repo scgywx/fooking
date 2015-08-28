@@ -69,24 +69,9 @@ int Process::send(ChannelMsg *ch)
 {
 	struct iovec	iov[1];
 	struct msghdr	msg;
-	
-	union {
-		struct cmsghdr	cm;
-		char			space[CMSG_SPACE(sizeof(int))];
-	} cmsg;
 
-	if (ch->fd > 0) {
-		msg.msg_control = (caddr_t) &cmsg;
-		msg.msg_controllen = sizeof(cmsg);
-
-		cmsg.cm.cmsg_len = CMSG_LEN(sizeof(int));
-		cmsg.cm.cmsg_level = SOL_SOCKET;
-		cmsg.cm.cmsg_type = SCM_RIGHTS;
-		*((int*)CMSG_DATA(&cmsg.cm)) = ch->fd;
-	} else {
-		msg.msg_control = NULL;
-		msg.msg_controllen = 0;
-	}
+	msg.msg_control = NULL;
+	msg.msg_controllen = 0;
 
 	iov[0].iov_base = (char *) ch;
 	iov[0].iov_len = sizeof(ChannelMsg);
@@ -98,6 +83,7 @@ int Process::send(ChannelMsg *ch)
 	msg.msg_iovlen = 1;
 
 	int n = ::sendmsg(nPipefd, &msg, 0);
+	LOG("sendmsg type=%d, len=%d", ch->type, n);
 	if (n == -1) {
 		if (errno == EAGAIN) {
 			return EAGAIN;
@@ -145,22 +131,6 @@ int Process::recv(ChannelMsg *ch)
 	if ((size_t)n < sizeof(ChannelMsg)) {
 		LOG_ERR("recvmsg() returned not enough data: %d", n);
 		return -1;
-	}
-
-	if (ch->type == CH_PIPE) {
-		if (cmsg.cm.cmsg_len < (socklen_t) CMSG_LEN(sizeof(int))) {
-			LOG_ERR("recvmsg() returned too small ancillary data");
-			return -1;
-		}
-
-		if (cmsg.cm.cmsg_level != SOL_SOCKET || cmsg.cm.cmsg_type != SCM_RIGHTS)
-		{
-			LOG_ERR("recvmsg() returned invalid ancillary data "
-				"level=%d or type=%d", cmsg.cm.cmsg_level, cmsg.cm.cmsg_type);
-			return -1;
-		}
-
-		ch->fd = *(int *)CMSG_DATA(&cmsg.cm);
 	}
 
 	if (msg.msg_flags & (MSG_TRUNC|MSG_CTRUNC)) {

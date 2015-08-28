@@ -44,6 +44,23 @@ EventLoop::~EventLoop()
 {
 	zfree(pEvents);
 	zfree(pFireds);
+	
+	//free timer
+	for(TimerList::iterator it = arrTimers.begin();
+		it != arrTimers.end(); ++it)
+	{
+		TimerEvent *te = it->second;
+		zfree(te);
+	}
+	
+	//free tick
+	TickEvent *tick = pTickHead;
+	while(tick){
+		TickEvent *next = tick->next;
+		zfree(tick);
+		tick = next;
+	}
+	
 	delete pPoll;
 }
 
