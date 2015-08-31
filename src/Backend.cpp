@@ -115,13 +115,12 @@ RequestContext* Backend::post(Connection *client, Buffer *req, Buffer *params)
 	ctx->req = req;
 	ctx->params = params;
 	
-	if(connect(ctx)){
-		return ctx;
+	if(!connect(ctx)){
+		zfree(ctx);
+		return NULL;
 	}
 	
-	delete ctx;
-	
-	return NULL;
+	return ctx;
 }
 
 void Backend::onConnect(Connection *conn)

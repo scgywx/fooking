@@ -337,6 +337,8 @@ void Worker::onMessage(Connection *client)
 			RequestContext *ctx = pBackend->post(client, msg, &pData->params);
 			if(ctx){
 				pData->requests[ctx] = 1;
+			}else{
+				delete msg;
 			}
 		}else{
 			delete msg;
@@ -773,26 +775,4 @@ void Worker::proc()
 	LOG("worker started, pipefd=%d", nPipefd);
 	pScript = pMaster->pScript;
 	pEventLoop->run();
-	
-	//clear
-	delete pBackend;
-	delete pServer;
-	delete pEventLoop;
-	delete pScript;
-	
-	for(ClientList::const_iterator it = arrClients.begin(); it != arrClients.end(); ++it){
-		Connection *pClient = it->second;
-		ClientData *pData = static_cast<ClientData*>(pClient->getData());
-		delete pClient;
-		delete pData;
-	}
-	
-	IdleNode *idle = pIdleHead;
-	while(idle){
-		IdleNode *next = idle->next;
-		zfree(idle);
-		idle = next;
-	}
-	
-	Config::release();
 }
