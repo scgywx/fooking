@@ -61,8 +61,7 @@ public:
 	short				nWorkers;//进程数
 	int					nServerId;//服务器id
 	int					nMaxClients;//最大连接数
-	int					nSendBufferSize;//最大发送缓存区大小
-	int					nRecvBufferSize;//最大接受缓冲区大小
+	int					nMaxBufferSize;//最大缓存区大小
 	std::string			sLogFile;//日志文件
 	int					nLogLevel;//日志级别
 	std::string			sRouterHost;//路由服务器ip

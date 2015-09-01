@@ -100,6 +100,10 @@ void Master::start()
 			continue;
 		}
 		
+		if(!bRunning){
+			break;
+		}
+		
 		int found = -1;
 		for(int i = 0; i < pConfig->nWorkers; ++i){
 			Worker *pWorker = pWorkers[i];

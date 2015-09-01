@@ -34,6 +34,7 @@
 #define FCGI_HEADER_LEN  		8
 
 #define BACKEND_RETRY_MAX		1
+#define BACKEND_SEGMENT_LEN		65535
 
 #define ALIGN(size) ((size & 7) ? (8 - (size & 7)) : 0)
 
@@ -45,6 +46,7 @@
 		_ctx->index = nIdleTop;\
 	}\
 }
+
 	
 NS_USING;
 
@@ -203,9 +205,12 @@ void Backend::onClose(Connection *conn)
 	
 	//把栈顶的元素移到当前位置来
 	if(ctx->index){
-		--nIdleTop;
-		if(nIdleTop = ctx->index){
-			arrIdleBackends[ctx->index - 1] = arrIdleBackends[nIdleTop];
+		if(ctx->index == nIdleTop){
+			//位于栈顶，下移即可
+			--nIdleTop;
+		}else{
+			//位于栈中或者栈底，将栈顶元素与其交换
+			arrIdleBackends[ctx->index - 1] = arrIdleBackends[--nIdleTop];
 		}
 	}
 	
@@ -328,12 +333,29 @@ bool Backend::request(RequestContext *ctx)
 	
 	//stdin begin
 	if(ctx->req && !ctx->req->empty()){
-		int rpdsz = ALIGN(ctx->req->size());
-		FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, ctx->req->size(), rpdsz);
-		conn->send((const char*)&inh, sizeof(FastCGIHeader));
-		conn->send(ctx->req->data(), ctx->req->size());
-		if(rpdsz){
-			conn->send(paddings, rpdsz);
+		int segnum = ctx->req->size() / BACKEND_SEGMENT_LEN;
+		int remain = ctx->req->size() % BACKEND_SEGMENT_LEN;
+		
+		//分片
+		for(int i = 0; i < segnum; ++i){
+			int rpdsz = ALIGN(BACKEND_SEGMENT_LEN);
+			FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, BACKEND_SEGMENT_LEN, rpdsz);
+			conn->send((const char*)&inh, sizeof(FastCGIHeader));
+			conn->send(ctx->req->data() + i * BACKEND_SEGMENT_LEN, BACKEND_SEGMENT_LEN);
+			if(rpdsz){
+				conn->send(paddings, rpdsz);
+			}
+		}
+		
+		//剩余
+		if(remain){
+			int rpdsz = ALIGN(remain);
+			FastCGIHeader inh = makeHeader(FCGI_STDIN, 1, remain, rpdsz);
+			conn->send((const char*)&inh, sizeof(FastCGIHeader));
+			conn->send(ctx->req->data() + segnum * BACKEND_SEGMENT_LEN, remain);
+			if(rpdsz){
+				conn->send(paddings, rpdsz);
+			}
 		}
 	}
 	

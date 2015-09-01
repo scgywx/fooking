@@ -28,11 +28,8 @@ WORKER_NUM = 2;
 --最大连接数
 MAX_CLIENT_NUM = 10000;
 
---发送缓冲区
-SEND_BUFF_SIZE = 8192;
-
---接收缓冲区
-RECV_BUFF_SIZE = 8192;
+--缓冲区大小
+MAX_BUFF_SIZE = 4096;
 
 --路由服务器
 ROUTER_HOST = "127.0.0.1";

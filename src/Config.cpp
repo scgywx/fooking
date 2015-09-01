@@ -47,16 +47,13 @@ bool Config::load(const char *filename)
 	bEventConnect = readBoolean("EVENT_CONNECT");
 	bEventClose = readBoolean("EVENT_CLOSE");
 	nMaxClients = readInt("MAX_CLIENT_NUM");
-	nSendBufferSize = readInt("SEND_BUFF_SIZE");
-	nRecvBufferSize = readInt("RECV_BUFF_SIZE");
+	nMaxBufferSize = readInt("MAX_BUFF_SIZE");
 	nWorkers = readInt("WORKER_NUM");
 	sScriptFile = readString("SCRIPT_FILE");
 	nIdleTime = readInt("IDLE_TIME");
-	if(nSendBufferSize <= 0){
-		nSendBufferSize = 8192;
-	}
-	if(nRecvBufferSize <= 0){
-		nRecvBufferSize = 8192;
+	if(nMaxBufferSize < 0){
+		printf("MAX_BUFF_SIZE Invalid(MAX_BUFF_SIZE>=0)\n");
+		return false;
 	}
 	if(nWorkers < 1){
 		printf("WORKER_NUM Invalid(WORKER_NUM>=1)\n");

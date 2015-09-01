@@ -275,11 +275,12 @@ void Worker::onMessage(Connection *client)
 	Buffer *pBuffer = client->getBuffer();
 	Config *pConfig = Config::getInstance();
 	ClientData *pData = static_cast<ClientData*>(client->getData());
+	size_t maxSize = static_cast<size_t>(pConfig->nMaxBufferSize);
 	
 	LOG("client message, fd=%d, len=%d", client->getSocket().getFd(), pBuffer->size());
 	
 	//check recv buffer size
-	if(pConfig->nRecvBufferSize && pBuffer->size() > pConfig->nRecvBufferSize){
+	if(maxSize && pBuffer->size() > maxSize){
 		LOG_INFO("client recv buffer size less");
 		client->close();
 		return ;
@@ -311,10 +312,17 @@ void Worker::onMessage(Connection *client)
 				return ;
 			}
 			
-			//check body
+			//check buffer size
 			size_t msgSize = net::readNetInt32(pBuffer->data());
-			if(pBuffer->size() < hdrSize + msgSize){
-				LOG("message body size not enough, msgSize=%d, buffSize=%d", msgSize, pBuffer->size());
+			if(maxSize && msgSize > maxSize){
+				LOG_INFO("message body size too large");
+				client->close();
+				return ;
+			}
+			
+			//check body
+			if(pBuffer->size() - msgSize < hdrSize){
+				LOG("package length not enough, msgSize=%u, buffSize=%u", msgSize, pBuffer->size());
 				delete msg;
 				return ;
 			}
