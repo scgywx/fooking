@@ -14,9 +14,9 @@
 
 NS_USING;
 
-static int gExit;
-static int gReload;
-static int gSignal;
+static sig_atomic_t gExit;
+static sig_atomic_t gReload;
+static sig_atomic_t gSignal;
 
 Master::Master(int argc, char **argv):
 	nArgc(argc),
