@@ -14,7 +14,9 @@
 
 NS_USING;
 
-static Master *gMaster;
+static int gExit;
+static int gReload;
+static int gSignal;
 
 Master::Master(int argc, char **argv):
 	nArgc(argc),
@@ -24,7 +26,6 @@ Master::Master(int argc, char **argv):
 	pScript(NULL),
 	pGlobals(NULL)
 {
-	gMaster = this;
 }
 
 Master::~Master()
@@ -46,10 +47,10 @@ Master::~Master()
 void Master::start()
 {
 	//init script
-	Config *pConfig = Config::getInstance();
-	if(!pConfig->sScriptFile.empty()){
+	Config *cc = Config::getInstance();
+	if(!cc->sScriptFile.empty()){
 		pScript = new Script();
-		if(!pScript->load(pConfig->sScriptFile)){
+		if(!pScript->load(cc->sScriptFile)){
 			printf("init script failed\n");
 			return ;
 		}
@@ -65,47 +66,61 @@ void Master::start()
 		
 	//create server
 	pServer = new Server(NULL);
-	if(pServer->createTcpServer(pConfig->nPort) != 0){
+	if(pServer->createTcpServer(cc->nPort) != 0){
 		printf("create tcp server failed, port=%d, errno=%d, errstr=%s\n", 
-			pConfig->nPort, errno, strerror(errno));
+			cc->nPort, errno, strerror(errno));
 		return ;
 	}
 	
 	//create worker
-	pWorkers = (Worker**)zmalloc(pConfig->nWorkers * sizeof(Worker*));
-	bUseAcceptMutex = pConfig->nWorkers > 1;
-	for(int i = 0; i < pConfig->nWorkers; ++i){
+	pWorkers = (Worker**)zmalloc(cc->nWorkers * sizeof(Worker*));
+	bUseAcceptMutex = cc->nWorkers > 1;
+	for(int i = 0; i < cc->nWorkers; ++i){
 		pWorkers[i] = new Worker(this, i);
 		pWorkers[i]->start();
 	}
 	
 	//set title
 	char title[256];
-	snprintf(title, 256, "fooking gateway master, %s", pConfig->sFile.c_str());
+	snprintf(title, 256, "fooking gateway master, %s", cc->sFile.c_str());
 	utils::setProcTitle(title);
 		
 	//init signal
 	setupSignal();
 	
 	//started log
-	LOG_INFO("server started, listenfd=%d, port=%d", pServer->getSocket().getFd(), pConfig->nPort);
+	LOG_INFO("server started, listenfd=%d, port=%d", pServer->getSocket().getFd(), cc->nPort);
 
-	//wait worker exit
-	bRunning = true;
-	while(bRunning)
+	//process manager
+	while(true)
 	{
+		if(gExit){
+			gExit = 0;
+			LOG_INFO("master receive exit signal, signo=%d", gSignal);
+			ChannelMsg msg = {CH_EXIT, 0};
+			for(int i = 0; i < cc->nWorkers; ++i){
+				pWorkers[i]->send(&msg);
+			}
+			break;
+		}
+		
+		if(gReload){
+			gReload = 0;
+			LOG_INFO("master receive reload signal, signo=%d", gSignal);
+			ChannelMsg msg = {CH_RELOAD, 0};
+			for(int i = 0; i < cc->nWorkers; ++i){
+				pWorkers[i]->send(&msg);
+			}
+		}
+		
 		int ret = 0;
 		int pid = ::wait(&ret);
 		if(pid <= 0){
 			continue;
 		}
 		
-		if(!bRunning){
-			break;
-		}
-		
 		int found = -1;
-		for(int i = 0; i < pConfig->nWorkers; ++i){
+		for(int i = 0; i < cc->nWorkers; ++i){
 			Worker *pWorker = pWorkers[i];
 			if(pWorker->getPid() == pid){
 				found = pWorker->id();
@@ -150,25 +165,14 @@ void Master::setupSignal()
 
 void Master::procSignal(int sig)
 {
-	LOG_INFO("master receive signal=%d", sig);
+	gSignal = sig;
 	switch(sig){
 		case SIGUSR1:
-			//RELOAD TODO
+			gReload = 1;
 			break;
 		default:
-		{
-			Config *cc = Config::getInstance();
-			Master *pThis = gMaster;
-			
-			ChannelMsg msg = {CH_EXIT, 0};
-			for(int i = 0; i < cc->nWorkers; ++i){
-				pThis->pWorkers[i]->send(&msg);
-			}
-			
-			pThis->bRunning = false;
-			
+			gExit = 1;
 			break;
-		}
 	}
 }
 

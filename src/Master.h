@@ -52,6 +52,5 @@ public:
 	Script*			pScript;
 	GlobalData*		pGlobals;
 	bool			bUseAcceptMutex;
-	bool			bRunning;
 };
 NS_END
