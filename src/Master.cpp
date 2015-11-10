@@ -41,7 +41,7 @@ Master::~Master()
 		zfree(pWorkers);
 	}
 	
-	releaseGlobals();
+	ShareMemory::free(&shm);
 }
 
 void Master::start()
@@ -60,7 +60,10 @@ void Master::start()
 	Session::init();
 	
 	//create share memory
-	if(!createGlobals()){
+	shm.size = sizeof(GlobalData) + sizeof(int) * cc->nWorkers;
+	if(ShareMemory::alloc(&shm) == 0){
+		pGlobals = static_cast<GlobalData*>(shm.addr);
+	}else{
 		return ;
 	}
 		
@@ -173,36 +176,5 @@ void Master::procSignal(int sig)
 		default:
 			gExit = 1;
 			break;
-	}
-}
-
-bool Master::createGlobals()
-{
-	Config *pConfig = Config::getInstance();
-	int size = sizeof(GlobalData) + sizeof(int) * pConfig->nWorkers;
-	int id = shmget(IPC_PRIVATE, size, (SHM_R|SHM_W|IPC_CREAT));
-	if (id == -1) {
-		LOG_ERR("shmget(%u) failed", size);
-		return false;
-	}
-
-	pGlobals = (GlobalData*)shmat(id, NULL, 0);
-	if(pGlobals == (void*)-1){
-		LOG_ERR("shmat() failed");
-		return false;
-	}
-
-	if (shmctl(id, IPC_RMID, NULL) == -1) {
-		LOG_ERR("shmctl(IPC_RMID) failed");
-		return false;
-	}
-
-	return true;
-}
-
-void Master::releaseGlobals()
-{
-	if(shmdt(pGlobals) == -1) {
-		LOG_ERR("shmdt(%p) failed", pGlobals);
 	}
 }

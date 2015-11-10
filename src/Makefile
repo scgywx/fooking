@@ -1,4 +1,4 @@
-OBJS = Buffer.o Log.o Socket.o Script.o Config.o Process.o EventLoop.o Connection.o \
+OBJS = Buffer.o Log.o ShareMemory.o Socket.o Script.o Config.o Process.o EventLoop.o Connection.o \
 	Session.o Server.o Master.o Router.o Worker.o Backend.o Utils.o fooking.o \
 	Poll/EPoll.o Poll/Kqueue.o Poll/Select.o ../deps/lua/src/liblua.a
 FLAG = -O -g -Wall -Wno-deprecated -I../src/ -I../deps/lua/src -L../deps/lua/src

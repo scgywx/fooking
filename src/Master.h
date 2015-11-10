@@ -9,6 +9,7 @@
 #include "Worker.h"
 #include "Atomic.h"
 #include "Script.h"
+#include "ShareMemory.h"
 
 #define LockAcceptMutex(lock, val) atomic_cmp_set(lock, 0, val)
 #define UnLockAcceptMutex(lock, val) atomic_cmp_set(lock, val, 0)
@@ -51,6 +52,7 @@ public:
 	Worker**		pWorkers;
 	Script*			pScript;
 	GlobalData*		pGlobals;
+	ShareMemoryInfo shm;
 	bool			bUseAcceptMutex;
 };
 NS_END

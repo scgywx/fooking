@@ -141,7 +141,7 @@ $(function(){
 
 function login(name)
 {
-	client = new WebSocket('ws://test:9005');
+	client = new WebSocket('ws://127.0.0.1:9005');
 	client.onopen = function(event) {
 		console.log("connected");
 		sendMsg({
