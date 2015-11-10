@@ -11,19 +11,19 @@ class Session
 {
 public:
 	Session(){}
-	Session(uint_16 pid, uint_16 fd);
+	Session(uint16_t pid, uint16_t fd);
 	Session(const char *sid);
 public:
 	const char* getId(){
 		return sId;
 	}
-	uint_16	getFd(){
+	uint16_t	getFd(){
 		return nFd;
 	}
-	uint_16 getPid(){
+	uint16_t getPid(){
 		return nPid;
 	}
-	uint_32 getTime(){
+	uint32_t getTime(){
 		return nTime;
 	}
 	bool operator == (const Session&r) const{
@@ -35,12 +35,12 @@ public:
 public:
 	static void				init();
 private:
-	uint_32					nTime;
-	uint_16					nPid;
-	uint_16					nMachine;
-	uint_16					nFd;
-	char					sId[SID_FULL_LEN];
+	uint32_t			nTime;
+	uint16_t			nPid;
+	uint32_t			nMachine;
+	uint32_t			nFd;
+	char				sId[SID_FULL_LEN];
 private:
-	static uint_16			snMachine;
+	static uint16_t		snMachine;
 };
 NS_END

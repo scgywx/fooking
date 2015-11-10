@@ -3,6 +3,7 @@
 #include "Socket.h"
 #include "Log.h"
 #include "Config.h"
+#include "Utils.h"
 
 NS_USING;
 
@@ -11,19 +12,19 @@ RouterMsg Router::unpackMsg(void *ptr)
 	RouterMsg *pMsg = (RouterMsg*)ptr;
 	RouterMsg msg;
 	
-	msg.type = net::readNetInt16((char*)&pMsg->type);
-	msg.slen = net::readNetInt16((char*)&pMsg->slen);
-	msg.len = net::readNetInt32((char*)&pMsg->len);
+	msg.type = utils::readNetInt16((char*)&pMsg->type);
+	msg.slen = utils::readNetInt16((char*)&pMsg->slen);
+	msg.len = utils::readNetInt32((char*)&pMsg->len);
 	
 	return msg;
 }
 
-void Router::packMsg(void *ptr, uint_16 type, uint_16 slen, int len)
+void Router::packMsg(void *ptr, uint16_t type, uint16_t slen, int len)
 {
 	RouterMsg *pMsg = (RouterMsg*)ptr;
-	net::writeNetInt16((char*)&pMsg->type, type);
-	net::writeNetInt16((char*)&pMsg->slen, slen);
-	net::writeNetInt32((char*)&pMsg->len, len);
+	utils::writeNetInt16((char*)&pMsg->type, type);
+	utils::writeNetInt16((char*)&pMsg->slen, slen);
+	utils::writeNetInt32((char*)&pMsg->len, len);
 }
 
 Router::Router(int argc, char **argv):
@@ -78,7 +79,7 @@ void Router::onClose(Connection *conn)
 	delete conn;
 }
 
-void Router::sendHead(Connection *conn, uint_16 type, uint_16 slen, int len)
+void Router::sendHead(Connection *conn, uint16_t type, uint16_t slen, int len)
 {
 	RouterMsg msg;
 	packMsg(&msg, type, slen, len);
@@ -173,7 +174,7 @@ void Router::onMessage(Connection *conn)
 void Router::doAuth(Connection *conn, RouterMsg *pMsg)
 {
 	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
-	int serverid = net::readNetInt32(pMsg->data);
+	int serverid = utils::readNetInt32(pMsg->data);
 	pInfo->serverid = serverid;
 	pInfo->isauth = true;
 	

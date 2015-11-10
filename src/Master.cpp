@@ -11,6 +11,7 @@
 #include "Atomic.h"
 #include "Config.h"
 #include "Log.h"
+#include "Utils.h"
 
 NS_USING;
 

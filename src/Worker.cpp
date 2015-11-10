@@ -7,6 +7,7 @@
 #include "Atomic.h"
 #include "Log.h"
 #include "Config.h"
+#include "Utils.h"
 
 NS_USING;
 
@@ -147,13 +148,13 @@ void Worker::closeClient(Connection *client)
 	delete client;
 }
 
-void Worker::sendToRouter(uint_16 type, uint_16 slen, const char *sessptr, int len, const char *dataptr)
+void Worker::sendToRouter(uint16_t type, uint16_t slen, const char *sessptr, int len, const char *dataptr)
 {
 	if(pRouter){
 		RouterMsg msg;
-		net::writeNetInt16((char*)&msg.type, type);
-		net::writeNetInt16((char*)&msg.slen, slen);
-		net::writeNetInt32((char*)&msg.len, len);
+		utils::writeNetInt16((char*)&msg.type, type);
+		utils::writeNetInt16((char*)&msg.slen, slen);
+		utils::writeNetInt32((char*)&msg.len, len);
 		pRouter->send((char*)&msg, ROUTER_HEAD_SIZE);
 		if(slen){
 			pRouter->send(sessptr, slen);
@@ -168,7 +169,7 @@ void Worker::sendToClientByDefault(Connection *conn, const char *data, int len)
 {
 	if(len){
 		char hdr[4];
-		net::writeNetInt32(hdr, len);
+		utils::writeNetInt32(hdr, len);
 		conn->send(hdr, 4);
 		conn->send(data, len);
 	}
@@ -313,7 +314,7 @@ void Worker::onMessage(Connection *client)
 			}
 			
 			//check buffer size
-			size_t msgSize = net::readNetInt32(pBuffer->data());
+			size_t msgSize = utils::readNetInt32(pBuffer->data());
 			if(maxSize && msgSize > maxSize){
 				LOG_INFO("message body size too large");
 				client->close();
@@ -461,7 +462,7 @@ void Worker::onRouterConnect(Connection *router)
 	//AUTH
 	Config *pConfig = Config::getInstance();
 	char id[10];
-	net::writeNetInt32(id, pConfig->nServerId);
+	utils::writeNetInt32(id, pConfig->nServerId);
 	sendToRouter(ROUTER_MSG_AUTH, 0, NULL, sizeof(int), id);
 	
 	//sync session

@@ -4,6 +4,7 @@
 #include "Master.h"
 #include "Config.h"
 #include "Log.h"
+#include "Utils.h"
 
 ProcessInfo proc;
 

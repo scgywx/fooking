@@ -6,16 +6,16 @@
 
 NS_USING;
 
-uint_16 Session::snMachine;
+uint16_t Session::snMachine;
 
-Session::Session(uint_16 pid, uint_16 fd):
+Session::Session(uint16_t pid, uint16_t fd):
 	nPid(pid),
 	nMachine(snMachine),
 	nFd(fd)
 {
 	time_t t;
 	time(&t);
-	nTime = static_cast<uint_32>(t);
+	nTime = static_cast<uint32_t>(t);
 	
 	sprintf(sId, "%08x%04x%04x%04x", nTime, nMachine, nPid, nFd);
 	sId[SID_LENGTH] = '\0';
@@ -54,9 +54,9 @@ void Session::init()
 	//read int16
 	int rfd = open("/dev/urandom", O_RDONLY);
 	if(rfd > 0){
-		int n = read(rfd, &snMachine, sizeof(uint_16));
+		int n = read(rfd, &snMachine, sizeof(uint16_t));
 		close(rfd);
-		if(n == sizeof(uint_16)){
+		if(n == sizeof(uint16_t)){
 			return ;
 		}
 	}else{

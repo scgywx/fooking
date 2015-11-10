@@ -76,7 +76,7 @@ private:
 	void				sendToClient(Connection *conn, Buffer *msg);
 	void				sendToClientByDefault(Connection *conn, const char *data, int len);
 	void				sendToClientByScript(Connection *conn, Buffer *msg);
-	void				sendToRouter(uint_16 type, uint_16 slen, const char *sessptr, int len, const char *dataptr);
+	void				sendToRouter(uint16_t type, uint16_t slen, const char *sessptr, int len, const char *dataptr);
 	void				addIdleNode(Connection *conn);
 	void				delIdleNode(Connection *conn);
 	void				resetIdleNode(Connection *conn);

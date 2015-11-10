@@ -29,10 +29,10 @@ NS_BEGIN
 #define ROUTER_HEAD_SIZE		(sizeof(RouterMsg))
 
 typedef struct{
-	uint_16	type;//类型
-	uint_16	slen;//session长度
-	int		len;//数据长度
-	char	data[0];
+	uint16_t	type;//类型
+	uint16_t	slen;//session长度
+	int			len;//数据长度
+	char		data[0];
 }RouterMsg;
 
 typedef hash_map<Connection*, int> ConnectionSet;
@@ -59,12 +59,12 @@ public:
 public:
 	void start();
 	static RouterMsg unpackMsg(void *ptr);
-	static void packMsg(void *ptr, uint_16 type, uint_16 slen, int len);
+	static void packMsg(void *ptr, uint16_t type, uint16_t slen, int len);
 private:
 	void onConnection(int fd, int ev, void *data);
 	void onMessage(Connection *conn);
 	void onClose(Connection *conn);
-	void sendHead(Connection *conn, uint_16 type, uint_16 slen, int len);
+	void sendHead(Connection *conn, uint16_t type, uint16_t slen, int len);
 	void getSessionGroups(SessionGroup &groups, int slen, char *sptr);
 private:
 	void doAuth(Connection *conn, RouterMsg *pMsg);

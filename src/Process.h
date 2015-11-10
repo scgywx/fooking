@@ -7,8 +7,8 @@ NS_BEGIN
 #define CH_EXIT		2 //退出程序
 
 typedef struct{
-	uint_16	type;
-	uint_16	from;
+	uint16_t type;
+	uint16_t from;
 }ChannelMsg;
 
 class Process:
