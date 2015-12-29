@@ -227,7 +227,7 @@ int EventLoop::procTimerEvent()
 			processed++;
 			zfree(te);
 		}else{
-			it++;
+			break;
 		}
 	}
 
