@@ -228,7 +228,7 @@ bool Script::load(std::string &filename)
 	luaL_requiref(pState, "fooking.connection", luaopen_connection, 0);
 	
 	//get real dir
-	char realdir[512];
+	char realdir[PATH_MAX];
 	realpath(filename.c_str(), realdir);
 	int len = strlen(realdir);
 	for(int i = len - 1; i >= 0; --i){
