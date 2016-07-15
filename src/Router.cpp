@@ -238,7 +238,7 @@ void Router::doSendMsg(Connection *conn, RouterMsg *pMsg)
 	for(SessionGroup::const_iterator it = groups.begin(); it != groups.end(); ++it){
 		Connection *gate = it->first;
 		const std::string &sidlist = it->second;
-		LOG("send msg to: %s, data=%s", sidlist.c_str());
+		LOG("send msg to: %s, datalen=%d", sidlist.c_str(), pMsg->len);
 		sendHead(gate, ROUTER_MSG_SEND_MSG, sidlist.size(), pMsg->len);
 		gate->send(sidlist.c_str(), sidlist.size());
 		gate->send(pMsg->data + pMsg->slen, pMsg->len);
