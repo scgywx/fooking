@@ -20,8 +20,8 @@
 #define SOCKET_TCP			1
 #define SOCKET_UNIX			2
 
-#define SID_LENGTH			20
-#define SID_FULL_LEN		21
+#define SID_LENGTH			16
+#define SID_FULL_LEN		17
 
 /* Anti-warning macro... */
 #define NOTUSED(V) 			((void) V)

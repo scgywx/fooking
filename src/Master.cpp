@@ -58,7 +58,7 @@ void Master::start()
 	}
 	
 	//session initialize
-	Session::init();
+	Session::init(cc->nServerId);
 	
 	//create share memory
 	shm.size = sizeof(GlobalData) + sizeof(int) * cc->nWorkers;

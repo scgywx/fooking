@@ -19,6 +19,7 @@ NS_BEGIN
 typedef struct{
 	atomic_t	lock;
 	int			clients;
+	int			count;
 	int			workerClients[0];
 }GlobalData;
 
@@ -34,6 +35,7 @@ public:
 	{
 		pGlobals->workerClients[id]++;
 		atomic_fetch_add(&pGlobals->clients, 1);
+		atomic_fetch_add(&pGlobals->count, 1);
 	}
 	void			delClient(int id)
 	{

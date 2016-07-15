@@ -6,65 +6,30 @@
 
 NS_USING;
 
-uint16_t Session::snMachine;
+uint16_t Session::snServerId;
 
-Session::Session(uint16_t pid, uint16_t fd):
-	nPid(pid),
-	nMachine(snMachine),
-	nFd(fd)
+/**
+ * 31位时间戳(最大可表示到2038年)
+ * 10位毫秒
+ * 13位服务器ID(最大可表示8191台服务器)
+ * 10位自增id(最大值是1023，超出从0开始重计)
+ * 共64位，每秒可生成100w条不同ID
+ */
+Session::Session(uint16_t mask)
 {
-	time_t t;
-	time(&t);
-	nTime = static_cast<uint32_t>(t);
+	struct timeval tv;
+	gettimeofday(&tv, NULL);
+	int ms = tv.tv_usec / 1000;
 	
-	sprintf(sId, "%08x%04x%04x%04x", nTime, nMachine, nPid, nFd);
-	sId[SID_LENGTH] = '\0';
+	uint32_t int64hi, int64lo;
+	int64hi = (tv.tv_sec << 1) | ((ms & 0x200) >> 9);
+	int64lo = ((ms & 0x1ff) << 23) | (snServerId << 10) | (mask & 0x3ff);
+	
+	snprintf(sId, SID_FULL_LEN, "%08x%08x", int64hi, int64lo);
 }
 
-Session::Session(const char *sid)
+void Session::init(uint16_t serverid)
 {
-	char stime[16] = {0};
-	char smachine[16] = {0};
-	char spid[16] = {0};
-	char sfd[16] = {0};
-	
-	//sid
-	memcpy(sId, sid, SID_LENGTH);
-	sId[SID_LENGTH] = '\0';
-	
-	//time
-	memcpy(stime, sid, 8);
-	nTime = strtol(stime, NULL, 16);
-	
-	//machine
-	memcpy(smachine, sid + 8, 4);
-	nMachine = strtol(smachine, NULL, 16);
-	
-	//pid
-	memcpy(spid, sid + 12, 4);
-	nPid = strtol(spid, NULL, 16);
-	
-	//fd
-	memcpy(sfd, sid + 16, 4);
-	nFd = strtol(sfd, NULL, 16);
-}
-
-void Session::init()
-{
-	//read int16
-	int rfd = open("/dev/urandom", O_RDONLY);
-	if(rfd > 0){
-		int n = read(rfd, &snMachine, sizeof(uint16_t));
-		close(rfd);
-		if(n == sizeof(uint16_t)){
-			return ;
-		}
-	}else{
-		LOG("can't open /dev/urandom, err=%s", strerror(errno));
-	}
-	
-	//read
-	srand((int)time(0));
-	snMachine = rand() & 0xFFFF;
+	snServerId = serverid & 0x1FFF;
 }
 

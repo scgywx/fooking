@@ -30,9 +30,12 @@ Worker::~Worker()
 
 void Worker::createClient(int fd, const char *host, int port)
 {
+	//计数更新
+	pMaster->addClient(nId);
+	
 	//创建session对像
 	Config *cc = Config::getInstance();
-	Session sess(nPid, fd);
+	Session sess(pMaster->pGlobals->count);
 	LOG("new client, fd=%d, host=%s, port=%d, sid=%s", fd, host, port, sess.getId());
 	
 	//环镜变量
@@ -57,9 +60,6 @@ void Worker::createClient(int fd, const char *host, int port)
 	
 	//客户端列表更新
 	arrClients[sess.getId()] = client;
-	
-	//计数更新
-	pMaster->addClient(nId);
 	
 	//Router通知
 	sendToRouter(ROUTER_MSG_CONN, SID_LENGTH, sess.getId(), 0, NULL);
