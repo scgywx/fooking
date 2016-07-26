@@ -44,6 +44,7 @@ typedef hash_map<std::string, ConnectionSet> ChannelList;
 typedef struct{
 	bool		isauth;
 	int			serverid;
+	int			workerid;
 	SessionSet	sessions;//负责的连接
 	ChannelSet	channels;//订阅的频道
 }GatewayInfo;

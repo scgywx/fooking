@@ -175,7 +175,9 @@ void Router::doAuth(Connection *conn, RouterMsg *pMsg)
 {
 	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
 	int serverid = utils::readNetInt32(pMsg->data);
+	int workerid = utils::readNetInt32(pMsg->data + sizeof(int));
 	pInfo->serverid = serverid;
+	pInfo->workerid = workerid;
 	pInfo->isauth = true;
 	
 	LOG("auth %d", serverid);
@@ -369,8 +371,8 @@ void Router::doInfo(Connection *conn, RouterMsg *pMsg)
 			continue;
 		}
 		
-		bufflen = snprintf(buffer, 1024, "gateway: %d\t%d\t%d\r\n", 
-				pInfo->serverid, pInfo->sessions.size(), pInfo->channels.size());
+		bufflen = snprintf(buffer, 1024, "gateway: %d\t%d\t%d\t%d\r\n", 
+				pInfo->serverid, pInfo->workerid, pInfo->sessions.size(), pInfo->channels.size());
 		body.append(buffer, bufflen);
 	}
 	

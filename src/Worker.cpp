@@ -210,30 +210,38 @@ void Worker::sendToClient(Connection *conn, const char *data, int len)
 	}
 }
 
-void Worker::onChannel(int fd, int ev, void *data)
+void Worker::onPipeMessage(Connection *conn)
 {
-	LOG("on channel");
-	ChannelMsg ch;
-	int n = recv(&ch);
-	if(n){
-		pEventLoop->removeEventListener(fd, EV_IO_ALL);
-		close(fd);
-		LOG_ERR("[worker]broken pipe");
+	Buffer *pBuffer = conn->getBuffer();
+	Config *cc = Config::getInstance();
+	
+	LOG("on pipe message");
+	
+	if(pBuffer->size() < sizeof(PipeMsg)){
+		LOG("pipe head not enough");
 		return ;
 	}
 	
-	switch(ch.type){
+	PipeMsg *pMsg = (PipeMsg*)pBuffer->data();
+	if(pBuffer->size() < pMsg->len + sizeof(PipeMsg)){
+		LOG("pipe body not enough");
+		return ;
+	}
+	
+	switch(pMsg->type){
 		case CH_RELOAD:
-			LOG("channel msg reload");
+			LOG("pipe msg reload");
 			break;
 		case CH_EXIT:
-			LOG("channel msg exit");
+			LOG("pipe msg exit");
 			pEventLoop->stop();
 			break;
 		default:
-			LOG("invalid type");
+			LOG("invalid pipe type");
 			break;
 	}
+	
+	pBuffer->seek(sizeof(PipeMsg) + pMsg->len);
 }
 
 void Worker::onConnection(int fd, int ev, void *data)
@@ -461,20 +469,22 @@ void Worker::onRouterConnect(Connection *router)
 	
 	//AUTH
 	Config *pConfig = Config::getInstance();
-	char id[10];
-	utils::writeNetInt32(id, pConfig->nServerId);
-	sendToRouter(ROUTER_MSG_AUTH, 0, NULL, sizeof(int), id);
+	char authstr[8];
+	utils::writeNetInt32(authstr, pConfig->nServerId);
+	utils::writeNetInt32(authstr + sizeof(int), nId);
+	sendToRouter(ROUTER_MSG_AUTH, 0, NULL, sizeof(authstr), authstr);
 	
 	//sync session
 	int sidnum = 0;
 	std::string sidlist;
+	sidlist.reserve(arrClients.size() * SID_LENGTH);
 	for(ClientList::const_iterator it = arrClients.begin(); it != arrClients.end(); ++it){
 		const std::string &sid = it->first;
 		sidnum++;
 		sidlist.append(sid);
 	}
 	if(sidnum){
-		sendToRouter(ROUTER_MSG_CONN, sidnum * SID_LENGTH, sidlist.c_str(), 0, NULL);
+		sendToRouter(ROUTER_MSG_CONN, sidlist.size(), sidlist.c_str(), 0, NULL);
 	}
 	
 	//sync channel
@@ -756,8 +766,11 @@ void Worker::proc()
 	//create loop
 	pEventLoop = new EventLoop();
 	pEventLoop->setMaxWaitTime(500);
-	pEventLoop->addEventListener(nPipefd, EV_IO_READ, EV_IO_CB(this, Worker::onChannel), NULL);
 	pEventLoop->setLoopBefore(EV_CB(this, Worker::loopBefore), NULL);
+	
+	//pipe event
+	pPipe = new Connection(pEventLoop, arrPipes[1]);
+	pPipe->setMessageHandler(EV_CB(this, Worker::onPipeMessage));
 	
 	//listen server
 	pServer = new Server(pEventLoop, pMaster->pServer->getSocket().getFd());

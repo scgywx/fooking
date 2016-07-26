@@ -76,11 +76,19 @@ void Master::start()
 		return ;
 	}
 	
+	//make pipes
+	arrWorkerPipes = makePipes(cc->nWorkers);
+	if(!arrWorkerPipes){
+		printf("create worker pipe failed\n");
+		return ;
+	}
+	
 	//create worker
 	pWorkers = (Worker**)zmalloc(cc->nWorkers * sizeof(Worker*));
 	bUseAcceptMutex = cc->nWorkers > 1;
 	for(int i = 0; i < cc->nWorkers; ++i){
 		pWorkers[i] = new Worker(this, i);
+		pWorkers[i]->setPipe(arrWorkerPipes[i]);
 		pWorkers[i]->start();
 	}
 	
@@ -101,9 +109,13 @@ void Master::start()
 		if(gExit){
 			gExit = 0;
 			LOG_INFO("master receive exit signal, signo=%d", gSignal);
-			ChannelMsg msg = {CH_EXIT, 0};
+			PipeMsg msg = {CH_EXIT, 0};
 			for(int i = 0; i < cc->nWorkers; ++i){
-				pWorkers[i]->send(&msg);
+				int fd = pWorkers[i]->getPipefd();
+				int ret = ::write(fd, &msg, sizeof(msg));
+				if(ret == -1){
+					LOG_ERR("send exit signal to worker failed, error=%d, errstr=%s", errno, strerror(errno));
+				}
 			}
 			break;
 		}
@@ -111,9 +123,13 @@ void Master::start()
 		if(gReload){
 			gReload = 0;
 			LOG_INFO("master receive reload signal, signo=%d", gSignal);
-			ChannelMsg msg = {CH_RELOAD, 0};
+			PipeMsg msg = {CH_RELOAD, 0};
 			for(int i = 0; i < cc->nWorkers; ++i){
-				pWorkers[i]->send(&msg);
+				int fd = pWorkers[i]->getPipefd();
+				int ret = ::write(fd, &msg, sizeof(msg));
+				if(ret == -1){
+					LOG_ERR("send reload signal to worker failed, error=%d, errstr=%s", errno, strerror(errno));
+				}
 			}
 		}
 		
@@ -147,6 +163,7 @@ void Master::start()
 			
 			//restart
 			pWorkers[found] = new Worker(this, found);
+			pWorkers[found]->setPipe(arrWorkerPipes[found]);
 			pWorkers[found]->start();
 		}
 	}
@@ -178,4 +195,49 @@ void Master::procSignal(int sig)
 			gExit = 1;
 			break;
 	}
+}
+
+PipeType* Master::makePipes(int n)
+{
+	PipeType *pipes = new PipeType[n];
+	bool fail = false;
+	int i, j;
+	
+	for(i = 0; i < n; ++i){
+		int *fds = pipes[i];
+		fds[0] = fds[1] = -1;
+		
+		if(socketpair(AF_UNIX, SOCK_STREAM, 0, fds) == -1){
+			fail = true;
+			break;
+		}
+		
+		for(j = 0; j < 2; ++j){
+			//set nonblock
+			int flags = ::fcntl(fds[j], F_GETFL, 0);
+			flags |= O_NONBLOCK;
+			
+			int ret = ::fcntl(fds[j], F_SETFL, flags);
+			if(ret < 0){
+				fail = true;
+				break;
+			}
+		}
+		
+		if(fail) break;
+	}
+	
+	if(fail){
+		for(int x = i; x >=0; --x){
+			int *fds = pipes[x];
+			if(fds[0] != -1) close(fds[0]);
+			if(fds[1] != -1) close(fds[1]);
+		}
+		
+		delete pipes;
+		
+		return NULL;
+	}
+	
+	return pipes;
 }

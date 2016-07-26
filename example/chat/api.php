@@ -70,9 +70,10 @@ class RouterClient
 			$line = substr($data, 0, $pos);
 			$args = explode(': ', $line);
 			if($args[0] == 'gateway'){
-				list($serverid, $clients, $channels) = explode("\t", $args[1]);
+				list($serverid, $workerid, $clients, $channels) = explode("\t", $args[1]);
 				$info['gateway'][$serverid][] = array(
 					'serverid' => $serverid,
+					'workerid' => $workerid,
 					'clients' => $clients,
 					'channels' => $channels,
 				);

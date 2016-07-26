@@ -9,7 +9,9 @@ NS_BEGIN
 typedef struct{
 	uint16_t type;
 	uint16_t from;
-}ChannelMsg;
+	uint32_t len;
+	char data[0];
+}PipeMsg;
 
 class Process:
 	public Object
@@ -19,15 +21,22 @@ public:
 	virtual ~Process();
 public:
 	bool start();
-	int getPipefd(){ return nPipefd; }
-	int getPid(){ return nPid;}
-	int send(ChannelMsg *ch);
-	int recv(ChannelMsg *ch);
+	int getPipefd() const{
+		return nPipefd;
+	}
+	int getPid() const{
+		return nPid;
+	}
+	void setPipe(int fds[2]){
+		arrPipes[0] = fds[0];
+		arrPipes[1] = fds[1];
+	}
 protected:
 	virtual void proc() = 0;
 protected:
 	pid_t			nPid;
 	int				nPipefd;
+	int				arrPipes[2];
 	bool			bRunning;
 };
 NS_END

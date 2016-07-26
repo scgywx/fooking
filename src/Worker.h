@@ -48,7 +48,7 @@ protected:
 	void 				proc();
 private:
 	//channel process handler
-	void				onChannel(int fd, int ev, void *data);
+	void				onPipeMessage(Connection *conn);
 	//client process handler
 	void				onConnection(int fd, int ev, void *data);
 	void 				onMessage(Connection *conn);
@@ -94,5 +94,6 @@ private:
 	bool				bHeldAcceptLock;
 	IdleNode*			pIdleHead;
 	IdleNode*			pIdleTail;
+	Connection*			pPipe;
 };
 NS_END

@@ -26,6 +26,8 @@
 /* Anti-warning macro... */
 #define NOTUSED(V) 			((void) V)
 
+typedef int	PipeType[2];
+
 typedef struct{
 	int		argc;
 	char**	argv;

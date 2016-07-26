@@ -643,14 +643,14 @@ FastCGIBody	Backend::parse(const char *ptr, int len)
 		}
 	}
 	
-	LOG("total=%d, length=%d, offset=%d\n", body.total, body.length, body.offset);
-	
 	//check
 	if(body.offset < 0 && body.length + body.offset > 0){
 		body.length = 0;
 	}else if(body.offset > 0 && body.offset + body.length > body.total){
 		body.length = 0;
 	}
+	
+	LOG("total=%d, length=%d, offset=%d", body.total, body.length, body.offset);
 	
 	return body;
 }

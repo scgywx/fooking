@@ -30,25 +30,29 @@ public:
 	Master(int argc, char **argv);
 	~Master();
 public:
-	void 			start();
-	void			addClient(int id)
+	void start();
+	
+	void addClient(int id)
 	{
 		pGlobals->workerClients[id]++;
 		atomic_fetch_add(&pGlobals->clients, 1);
 		atomic_fetch_add(&pGlobals->count, 1);
 	}
-	void			delClient(int id)
+	
+	void delClient(int id)
 	{
 		pGlobals->workerClients[id]--;
 		atomic_fetch_sub(&pGlobals->clients, 1);
 	}
 private:
-	bool			createGlobals();
-	void			releaseGlobals();
-	void 			setupSignal();
-	static void 	procSignal(int sig);
+	bool createGlobals();
+	void releaseGlobals();
+	void setupSignal();
+	static void procSignal(int sig);
+	PipeType* makePipes(int n);
 public:
 	int				nArgc;
+	PipeType*		arrWorkerPipes;
 	char**			pArgv;
 	Server*			pServer;
 	Worker**		pWorkers;
