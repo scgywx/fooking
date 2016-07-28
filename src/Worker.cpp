@@ -357,13 +357,13 @@ void Worker::onMessage(Connection *client)
 			}else{
 				delete msg;
 			}
+			
+			//重置idle
+			if(pConfig->nIdleTime > 0){
+				resetIdleNode(client);
+			}
 		}else{
 			delete msg;
-		}
-		
-		//重置idle
-		if(pConfig->nIdleTime > 0){
-			resetIdleNode(client);
 		}
 	}
 }
