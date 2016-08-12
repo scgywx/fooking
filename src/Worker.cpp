@@ -326,6 +326,7 @@ void Worker::onMessage(Connection *client)
 			if(maxSize && msgSize > maxSize){
 				LOG_INFO("message body size too large");
 				client->close();
+				delete msg;
 				return ;
 			}
 			
