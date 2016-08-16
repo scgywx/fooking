@@ -153,9 +153,9 @@ static int luaConnSessionId(lua_State *pState)
 	
 	lua_pop(pState, 1);
 	
-	ClientData *pData = (ClientData*)pConn->getData();
-	if(pData){
-		lua_pushlstring(pState, pData->session.getId(), SID_LENGTH);
+	ClientContext *pCtx = (ClientContext*)pConn->getContext();
+	if(pCtx){
+		lua_pushlstring(pState, pCtx->session.getId(), SID_LENGTH);
 	}
 	
 	return 1;

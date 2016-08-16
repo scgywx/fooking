@@ -47,7 +47,7 @@ typedef struct{
 	int			workerid;
 	SessionSet	sessions;//负责的连接
 	ChannelSet	channels;//订阅的频道
-}GatewayInfo;
+}GatewayContext;
 
 class Router:
 	public Object

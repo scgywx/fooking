@@ -28,8 +28,8 @@ public:
 	void			setConnectHandler(const EventHandler &cb){ cbConnect = cb;}
 	void			setWriteCompleteHandler(const EventHandler &cb){ cbWriteComplete = cb;}
 	void			setTimeout(int msec){nTimeout = msec;}
-	void			setData(void *data){ pData = data;}
-	void*			getData() const{ return pData;}
+	void			setContext(void *context){ pContext = context;}
+	void*			getContext() const{ return pContext;}
 	void			setHostAndPort(const char *host, short port);
 	int				getError(){ return nError;}
 private:
@@ -51,7 +51,7 @@ private:
 	EventHandler	cbClose;
 	EventHandler	cbConnect;
 	EventHandler	cbWriteComplete;
-	void*			pData;
+	void*			pContext;
 	char			sHost[16];
 	short			nPort;
 	int				nTimeout;

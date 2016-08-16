@@ -152,7 +152,7 @@ void Master::start()
 		if(found == -1){
 			LOG_ERR("worker exited, not found workerid");
 		}else{
-			LOG_INFO("worker exited, id=%d, pid=%d", found, pid);
+			LOG_ERR("worker exited, id=%d, pid=%d", found, pid);
 			atomic_fetch_sub(&pGlobals->clients, pGlobals->workerClients[found]);
 			pGlobals->workerClients[found] = 0;
 			

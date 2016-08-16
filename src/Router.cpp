@@ -47,10 +47,10 @@ void Router::onConnection(int fd, int ev, void *data)
 	conn->setCloseHandler(EV_CB(this, Router::onClose));
 	
 	//info
-	GatewayInfo *pInfo = new GatewayInfo();
-	pInfo->isauth = false;
-	pInfo->serverid = 0;
-	conn->setData(pInfo);
+	GatewayContext *ctx = new GatewayContext();
+	ctx->isauth = false;
+	ctx->serverid = 0;
+	conn->setContext(ctx);
 	
 	allGateways[conn] = 1;
 }
@@ -58,24 +58,24 @@ void Router::onConnection(int fd, int ev, void *data)
 void Router::onClose(Connection *conn)
 {
 	LOG("close client");
-	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
+	GatewayContext *ctx = (GatewayContext*)conn->getContext();
 	
 	//清理session
 	SessionSet::const_iterator it;
-	for(it = pInfo->sessions.begin(); it != pInfo->sessions.end(); ++it){
+	for(it = ctx->sessions.begin(); it != ctx->sessions.end(); ++it){
 		allSessions.erase(it->first);
 	}
 	
 	//清理channel
 	ChannelSet::const_iterator it2;
-	for(it2 = pInfo->channels.begin(); it2 != pInfo->channels.end(); ++it2){
+	for(it2 = ctx->channels.begin(); it2 != ctx->channels.end(); ++it2){
 		allChannels[it2->first].erase(conn);
 	}
 	
 	//清理gateway
 	allGateways.erase(conn);
 	
-	delete pInfo;
+	delete ctx;
 	delete conn;
 }
 
@@ -173,26 +173,26 @@ void Router::onMessage(Connection *conn)
 
 void Router::doAuth(Connection *conn, RouterMsg *pMsg)
 {
-	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
+	GatewayContext *ctx = (GatewayContext*)conn->getContext();
 	int serverid = utils::readNetInt32(pMsg->data);
 	int workerid = utils::readNetInt32(pMsg->data + sizeof(int));
-	pInfo->serverid = serverid;
-	pInfo->workerid = workerid;
-	pInfo->isauth = true;
+	ctx->serverid = serverid;
+	ctx->workerid = workerid;
+	ctx->isauth = true;
 	
 	LOG("auth %d", serverid);
 }
 
 void Router::doConn(Connection *conn, RouterMsg *pMsg)
 {
-	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
+	GatewayContext *ctx = (GatewayContext*)conn->getContext();
 	int pos = 0;
 	while(pos + SID_LENGTH <= pMsg->slen){
 		std::string sid(pMsg->data + pos, SID_LENGTH);
 		LOG("new connection, sid=%s", sid.c_str());
 		
 		allSessions[sid] = conn;
-		pInfo->sessions[sid] = 1;
+		ctx->sessions[sid] = 1;
 		
 		pos+= SID_LENGTH;
 	}
@@ -200,14 +200,14 @@ void Router::doConn(Connection *conn, RouterMsg *pMsg)
 
 void Router::doClose(Connection *conn, RouterMsg *pMsg)
 {
-	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
+	GatewayContext *ctx = (GatewayContext*)conn->getContext();
 	int pos = 0;
 	while(pos + SID_LENGTH <= pMsg->slen){
 		std::string sid(pMsg->data + pos, SID_LENGTH);
 		
 		LOG("close connection, sid=%s", sid.c_str());
 		allSessions.erase(sid);
-		pInfo->sessions.erase(sid);
+		ctx->sessions.erase(sid);
 		
 		pos+= SID_LENGTH;
 	}
@@ -252,9 +252,9 @@ void Router::doSendAllMsg(Connection *conn, RouterMsg *pMsg)
 	ConnectionSet::const_iterator it;
 	for(it = allGateways.begin(); it != allGateways.end(); ++it){
 		Connection *gate = it->first;
-		GatewayInfo *pInfo = (GatewayInfo*)gate->getData();
-		LOG("send allmsg to gateway=%p, clients=%d", gate, pInfo->sessions.size());
-		if(!pInfo->sessions.size()){
+		GatewayContext *ctx = (GatewayContext*)gate->getContext();
+		LOG("send allmsg to gateway=%p, clients=%d", gate, ctx->sessions.size());
+		if(!ctx->sessions.size()){
 			continue;
 		}
 		
@@ -323,9 +323,9 @@ void Router::doChannelSub(Connection *conn, RouterMsg *pMsg)
 {
 	LOG("subscribe channel, gate=%p", conn);
 	//频道名称在session域
-	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
+	GatewayContext *ctx = (GatewayContext*)conn->getContext();
 	std::string name(pMsg->data, pMsg->slen);
-	pInfo->channels[name] = 1;
+	ctx->channels[name] = 1;
 	allChannels[name][conn] = 1;
 }
 
@@ -333,9 +333,9 @@ void Router::doChannelUnSub(Connection *conn, RouterMsg *pMsg)
 {
 	LOG("unsubscribe channel, gate=%p", conn);
 	//频道名称在session域
-	GatewayInfo *pInfo = (GatewayInfo*)conn->getData();
+	GatewayContext *ctx = (GatewayContext*)conn->getContext();
 	std::string name(pMsg->data, pMsg->slen);
-	pInfo->channels.erase(name);
+	ctx->channels.erase(name);
 	
 	ChannelList::iterator it = allChannels.find(name);
 	if(it != allChannels.end()){
@@ -366,13 +366,13 @@ void Router::doInfo(Connection *conn, RouterMsg *pMsg)
 		it != allGateways.end(); ++it)
 	{
 		Connection *gate = it->first;
-		GatewayInfo *pInfo = (GatewayInfo*)gate->getData();
-		if(!pInfo->isauth){
+		GatewayContext *ctx = (GatewayContext*)gate->getContext();
+		if(!ctx->isauth){
 			continue;
 		}
 		
 		bufflen = snprintf(buffer, 1024, "gateway: %d\t%d\t%d\t%d\r\n", 
-				pInfo->serverid, pInfo->workerid, pInfo->sessions.size(), pInfo->channels.size());
+				ctx->serverid, ctx->workerid, ctx->sessions.size(), ctx->channels.size());
 		body.append(buffer, bufflen);
 	}
 	

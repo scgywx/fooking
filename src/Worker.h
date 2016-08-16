@@ -31,7 +31,7 @@ typedef struct{
 	RequestList	requests;
 	ChannelSet	channels;
 	IdleNode*	idle;
-}ClientData;
+}ClientContext;
 
 class Master;
 class Worker:

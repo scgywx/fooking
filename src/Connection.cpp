@@ -9,7 +9,7 @@ Connection::Connection(EventLoop *loop, int fd):
 	bWriting(false),
 	bClosed(false),
 	bConnected(false),
-	pData(NULL),
+	pContext(NULL),
 	nPort(0),
 	nTimeout(0),
 	nTimerId(0),

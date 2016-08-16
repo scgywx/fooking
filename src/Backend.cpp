@@ -63,6 +63,7 @@ Backend::Backend(EventLoop *loop):
 	nKeepalive = cc->nBackendKeepalive;
 	nConnectTimeout = cc->nBackendConnectTimeout;
 	nReadTimeout = cc->nBackendReadTimeout;
+	strFastcgiPrefix = cc->sFastcgiPrefix;
 	
 	//init roll
 	for(int n = 0; n < nServers; ++n)
@@ -129,7 +130,7 @@ void Backend::onConnect(Connection *conn)
 {
 	LOG("backend connected, conn=%p, fd=%d", conn, conn->getSocket().getFd());
 	
-	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getContext());
 	if(ctx->timer){
 		pLoop->stopTimer(ctx->timer);
 		ctx->timer = 0;
@@ -147,7 +148,7 @@ void Backend::onMessage(Connection *conn)
 {
 	LOG("backend data, conn=%p", conn);
 	
-	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getContext());
 	if(response(ctx)){
 		//invoke
 		EV_INVOKE(cbHandler, ctx);
@@ -171,7 +172,7 @@ void Backend::onMessage(Connection *conn)
 void Backend::onClose(Connection *conn)
 {
 	int err = conn->getError();
-	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getContext());
 	
 	//stop timer
 	if(ctx->timer){
@@ -229,7 +230,7 @@ void Backend::onTimeout(TimerId id, Connection *conn)
 {
 	LOG("backend read timeout");
 	
-	RequestContext *ctx = static_cast<RequestContext*>(conn->getData());
+	RequestContext *ctx = static_cast<RequestContext*>(conn->getContext());
 	
 	abort(ctx);
 	EV_INVOKE(cbHandler, ctx);
@@ -239,7 +240,7 @@ void Backend::onTimeout(TimerId id, Connection *conn)
 bool Backend::connect(RequestContext *ctx)
 {
 	Config *cc = Config::getInstance();
-	int old = nRoll;
+	size_t old = nRoll;
 	
 	do{
 		int serverid = arrServerRolls[nRoll];
@@ -265,7 +266,7 @@ bool Backend::connect(RequestContext *ctx)
 			//binding context
 			ctx->serverid = serverid;
 			ctx->backend = conn;
-			conn->setData(ctx);
+			conn->setContext(ctx);
 			
 			return true;
 		}
@@ -490,12 +491,18 @@ FastCGIBeginRequest Backend::makeBeginRequest(int role, int flag)
 	return body;
 }
 
-int	Backend::makeParam(Buffer &buf, const char *name, int namelen, const char *value, int vallen)
+int	Backend::makeParam(Buffer &buf, const char *name, int namelen, const char *value, int vallen, bool namePrefix)
 {
 	char npair[4];
 	char vpair[4];
 	int nnpair = 1;
 	int nvpair = 1;
+	
+	//prefix
+	size_t nprefix = namePrefix ? strFastcgiPrefix.size() : 0;
+	if(nprefix > 0){
+		namelen+= nprefix;
+	}
 
 	if (namelen < 128) {
 		npair[0] = namelen;
@@ -519,6 +526,9 @@ int	Backend::makeParam(Buffer &buf, const char *name, int namelen, const char *v
 
 	buf.append(npair, nnpair);
 	buf.append(vpair, nvpair);
+	if(nprefix > 0){
+		buf.append(strFastcgiPrefix.c_str(), nprefix);
+	}
 	buf.append(name, namelen);
 	if(vallen){
 		buf.append(value, vallen);
