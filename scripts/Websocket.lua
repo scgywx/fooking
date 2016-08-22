@@ -180,7 +180,7 @@ function wsDecode(s)
 	end
 	
 	--check length
-	if offset + length < total then
+	if offset + length > total then
 		return -1;
 	end
 	
