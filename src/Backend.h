@@ -78,8 +78,7 @@ public:
 	void				abort(RequestContext *ctx){ ctx->abort = 1; }
 	void				addParam(const char *name, int namelen, const char *value, int vallen);
 	void				setHandler(const EventHandler &cb){ cbHandler = cb; }
-public:
-	static int			makeParam(Buffer &buf, const char *name, int namelen, const char *value, int vallen);
+	int					makeParam(Buffer &buf, const char *name, int namelen, const char *value, int vallen, bool namePrefix = false);
 private:
 	void				onConnect(Connection *conn);
 	void				onMessage(Connection *conn);
@@ -98,12 +97,13 @@ private:
 	EventHandler		cbHandler;
 	Buffer				bParams;
 	ServerRoll			arrServerRolls;
-	int					nRoll;
+	size_t				nRoll;
 	int					nServers;
 	int					nKeepalive;
 	int					nConnectTimeout;
 	int					nReadTimeout;
 	int					nIdleTop;
 	RequestContext**	arrIdleBackends;
+	std::string			strFastcgiPrefix;
 };
 NS_END

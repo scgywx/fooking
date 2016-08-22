@@ -60,6 +60,7 @@ size_t Buffer::append(const char *buf, size_t len)
 		return nLength;
 	}
 	
+	//计算空闲大小
 	size_t tailFree = nTotal - nOffset - nLength;
 	if(tailFree < len){
 		if(tailFree + nOffset >= len){

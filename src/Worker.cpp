@@ -39,21 +39,19 @@ void Worker::createClient(int fd, const char *host, int port)
 	LOG("new client, fd=%d, host=%s, port=%d, sid=%s", fd, host, port, sess.getId());
 	
 	//环镜变量
-	ClientData *pData = new ClientData();
+	ClientContext *ctx = new ClientContext();
 	char szPort[8];
 	int nPort = sprintf(szPort, "%d", port);
-	pData->session = sess;
-	pData->nrequest = 0;
-	std::string env(cc->sFastcgiPrefix);
-	env+= "SESSIONID";
-	Backend::makeParam(pData->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, host, strlen(host));
-	Backend::makeParam(pData->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
-	Backend::makeParam(pData->params, env.c_str(), env.size(), sess.getId(), SID_LENGTH);
+	ctx->session = sess;
+	ctx->nrequest = 0;
+	pBackend->makeParam(ctx->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, host, strlen(host));
+	pBackend->makeParam(ctx->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
+	pBackend->makeParam(ctx->params, "SESSIONID", sizeof("SESSIONID") - 1, sess.getId(), SID_LENGTH, true);
 	
 	//创建连接对像
 	Connection *client = new Connection(pEventLoop, fd);
 	client->setHostAndPort(host, port);
-	client->setData(pData);
+	client->setContext(ctx);
 	client->setMessageHandler(EV_CB(this, Worker::onMessage));
 	client->setCloseHandler(EV_CB(this, Worker::onClose));
 	//client->setWriteCompleteHandler(EL_CB(this, Worker::onWriteComplete));
@@ -66,11 +64,8 @@ void Worker::createClient(int fd, const char *host, int port)
 	
 	//backend通知
 	if(cc->bEventConnect){
-		Buffer *params = new Buffer(pData->params);
-		std::string env(cc->sFastcgiPrefix);
-		env+= "EVENT";
-		
-		Backend::makeParam(*params, env.c_str(), env.size(), "1", 1);
+		Buffer *params = new Buffer(ctx->params);
+		pBackend->makeParam(*params, "EVENT", sizeof("EVENT"), "1", sizeof("1") - 1, true);
 		if(!pBackend->post(NULL, NULL, params)){
 			delete params;
 		}
@@ -89,35 +84,31 @@ void Worker::createClient(int fd, const char *host, int port)
 
 void Worker::closeClient(Connection *client)
 {
-	ClientData *pData = static_cast<ClientData*>(client->getData());
-	std::string sid = pData->session.getId();
+	ClientContext *pCtx = static_cast<ClientContext*>(client->getContext());
+	std::string sid = pCtx->session.getId();
 	LOG("close client, fd=%d, sid=%s", client->getSocket().getFd(), sid.c_str());
 	
 	//router通知
-	sendToRouter(ROUTER_MSG_CLOSE, SID_LENGTH, pData->session.getId(), 0, NULL);
+	sendToRouter(ROUTER_MSG_CLOSE, SID_LENGTH, pCtx->session.getId(), 0, NULL);
 	
 	//后端通知
 	Config *cc = Config::getInstance();
 	if(cc->bEventClose){
-		Buffer *params = new Buffer(pData->params);
-		std::string env(cc->sFastcgiPrefix);
-		env+= "EVENT";
-		
-		Backend::makeParam(*params, env.c_str(), env.size(), "2", 1);
+		Buffer *params = new Buffer(pCtx->params);
+		pBackend->makeParam(*params, "EVENT", sizeof("EVENT") - 1, "2", sizeof("2") - 1, true);
 		if(!pBackend->post(NULL, NULL, params)){
 			delete params;
 		}
 	}
 	
 	//释放后端请求
-	for(RequestList::const_iterator it = pData->requests.begin(); it != pData->requests.end(); ++it){
+	for(RequestList::const_iterator it = pCtx->requests.begin(); it != pCtx->requests.end(); ++it){
 		pBackend->abort(it->first);
 	}
 	
 	//取消频道订阅
-	for(ChannelSet::const_iterator it2 = pData->channels.begin(); it2 != pData->channels.end(); ++it2){
+	for(ChannelSet::const_iterator it2 = pCtx->channels.begin(); it2 != pCtx->channels.end(); ++it2){
 		const std::string &chname = it2->first;
-		
 		ChannelList::iterator cit = arrChannels.find(chname);
 		if(cit != arrChannels.end()){
 			cit->second.erase(client);
@@ -144,7 +135,7 @@ void Worker::closeClient(Connection *client)
 		delIdleNode(client);
 	}
 	
-	delete pData;
+	delete pCtx;
 	delete client;
 }
 
@@ -177,9 +168,9 @@ void Worker::sendToClientByDefault(Connection *conn, const char *data, int len)
 
 void Worker::sendToClientByScript(Connection *conn, Buffer *msg)
 {
-	ClientData *pData = static_cast<ClientData*>(conn->getData());
+	ClientContext *pCtx = static_cast<ClientContext*>(conn->getContext());
 	Buffer resp;
-	int ret = pScript->procWrite(conn, pData->nrequest, msg, &resp);
+	int ret = pScript->procWrite(conn, pCtx->nrequest, msg, &resp);
 	if(ret > 0){
 		if(!resp.empty()){
 			conn->send(resp.data(), resp.size());
@@ -213,7 +204,6 @@ void Worker::sendToClient(Connection *conn, const char *data, int len)
 void Worker::onPipeMessage(Connection *conn)
 {
 	Buffer *pBuffer = conn->getBuffer();
-	Config *cc = Config::getInstance();
 	
 	LOG("on pipe message");
 	
@@ -283,7 +273,7 @@ void Worker::onMessage(Connection *client)
 {
 	Buffer *pBuffer = client->getBuffer();
 	Config *pConfig = Config::getInstance();
-	ClientData *pData = static_cast<ClientData*>(client->getData());
+	ClientContext *pCtx = static_cast<ClientContext*>(client->getContext());
 	size_t maxSize = static_cast<size_t>(pConfig->nMaxBufferSize);
 	
 	LOG("client message, fd=%d, len=%d", client->getSocket().getFd(), pBuffer->size());
@@ -302,7 +292,7 @@ void Worker::onMessage(Connection *client)
 		
 		//自定义协议处理
 		if(pScript && pScript->hasReadProc()){
-			int ret = pScript->procRead(client, pData->nrequest, pBuffer, msg);
+			int ret = pScript->procRead(client, pCtx->nrequest, pBuffer, msg);
 			if(ret < 0){
 				delete msg;
 				return ;
@@ -326,6 +316,7 @@ void Worker::onMessage(Connection *client)
 			if(maxSize && msgSize > maxSize){
 				LOG_INFO("message body size too large");
 				client->close();
+				delete msg;
 				return ;
 			}
 			
@@ -341,29 +332,29 @@ void Worker::onMessage(Connection *client)
 			pBuffer->seek(hdrSize + msgSize);
 		}
 	
-		pData->nrequest++;
+		pCtx->nrequest++;
 		LOG("process message, fd=%d, reqid=%d, proc=%d, buffer size=%d, msg len=%d", 
 			client->getSocket().getFd(), 
-			pData->nrequest,
+			pCtx->nrequest,
 			proc, 
 			pBuffer->size(),
 			msg->size());
 	
 		//create request
 		if(!msg->empty()){
-			RequestContext *ctx = pBackend->post(client, msg, &pData->params);
+			RequestContext *ctx = pBackend->post(client, msg, &pCtx->params);
 			if(ctx){
-				pData->requests[ctx] = 1;
+				pCtx->requests[ctx] = 1;
 			}else{
 				delete msg;
 			}
+			
+			//重置idle
+			if(pConfig->nIdleTime > 0){
+				resetIdleNode(client);
+			}
 		}else{
 			delete msg;
-		}
-		
-		//重置idle
-		if(pConfig->nIdleTime > 0){
-			resetIdleNode(client);
 		}
 	}
 }
@@ -376,8 +367,8 @@ void Worker::onBackendHandler(RequestContext *ctx)
 	if(client){
 		if(!ctx->abort){
 			//unbinding request
-			ClientData *pdata = static_cast<ClientData*>(client->getData());
-			pdata->requests.erase(ctx);
+			ClientContext *pCtx = static_cast<ClientContext*>(client->getContext());
+			pCtx->requests.erase(ctx);
 			
 			//send response
 			if(ctx->rep && !ctx->rep->empty()){
@@ -555,8 +546,8 @@ void Worker::doChannelAdd(RouterMsg *pMsg)
 		ClientList::const_iterator it = arrClients.find(sid);
 		if(it != arrClients.end()){
 			Connection *pClient = it->second;
-			ClientData *pClientData = (ClientData*)pClient->getData();
-			pClientData->channels[chname] = 1;
+			ClientContext *pCtx = (ClientContext*)pClient->getContext();
+			pCtx->channels[chname] = 1;
 			
 			clients[pClient] = 1;
 			if(clients.size() == 1){
@@ -582,11 +573,11 @@ void Worker::doChannelDel(RouterMsg *pMsg)
 		ClientList::const_iterator it = arrClients.find(sid);
 		if(it != arrClients.end()){
 			Connection *pClient = it->second;
-			ClientData *pClientData = (ClientData*)pClient->getData();
-			pClientData->channels.erase(chname);
+			ClientContext *pCtx = (ClientContext*)pClient->getContext();
+			pCtx->channels.erase(chname);
 			
 			clients.erase(pClient);
-			if(!clients.size()){
+			if(clients.size() == 0){
 				sendToRouter(ROUTER_MSG_CH_UNSUB, chname.size(), chname.c_str(), 0, NULL);
 			}
 			
@@ -610,10 +601,10 @@ void Worker::doChannelPub(RouterMsg *pMsg)
 	ConnectionSet::const_iterator it2;
 	for(it2 = clients.begin(); it2 != clients.end(); ++it2){
 		Connection *pClient = it2->first;
-		ClientData *pClientData = (ClientData*)pClient->getData();
+		ClientContext *pCtx = (ClientContext*)pClient->getContext();
 		sendToClient(pClient, pMsg->data + pMsg->slen, pMsg->len);
 		
-		LOG("send channel msg to: %s", pClientData->session.getId());
+		LOG("send channel msg to: %s", pCtx->session.getId());
 	}
 }
 
@@ -635,15 +626,15 @@ void Worker::addIdleNode(Connection *conn)
 		pIdleHead = pIdleTail = node;
 	}
 	
-	ClientData *pData = (ClientData*)conn->getData();
-	pData->idle = node;
+	ClientContext *pCtx = (ClientContext*)conn->getContext();
+	pCtx->idle = node;
 }
 
 //删除空闲连接
 void Worker::delIdleNode(Connection *conn)
 {
-	ClientData *pData = (ClientData*)conn->getData();
-	IdleNode *node = pData->idle;
+	ClientContext *pCtx = (ClientContext*)conn->getContext();
+	IdleNode *node = pCtx->idle;
 	
 	if(node->prev){
 		node->prev->next = node->next;
@@ -663,8 +654,8 @@ void Worker::delIdleNode(Connection *conn)
 //重置空闲连接
 void Worker::resetIdleNode(Connection *conn)
 {
-	ClientData *pData = (ClientData*)conn->getData();
-	IdleNode *node = pData->idle;
+	ClientContext *pCtx = (ClientContext*)conn->getContext();
+	IdleNode *node = pCtx->idle;
 	
 	//先移除
 	if(node->prev){
