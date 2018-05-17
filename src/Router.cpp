@@ -39,10 +39,9 @@ Router::~Router()
 	delete pEventLoop;
 }
 
-void Router::onConnection(int fd, int ev, void *data)
+void Router::onConnection(Connection *conn)
 {
 	LOG("new client");
-	Connection *conn = new Connection(pEventLoop, fd);
 	conn->setMessageHandler(EV_CB(this, Router::onMessage));
 	conn->setCloseHandler(EV_CB(this, Router::onClose));
 	
@@ -388,7 +387,7 @@ void Router::start()
 	//create Router server
 	Config *pConfig = Config::getInstance();
 	pServer = new Server(pEventLoop);
-	pServer->setConnectionHandler(EV_IO_CB(this, Router::onConnection));
+	pServer->setConnectionHandler(EV_CB(this, Router::onConnection));
 	if(pServer->createTcpServer(pConfig->nPort) != 0){
 		LOG("create router server failed, errno=%d, error=%s", errno, strerror(errno));
 		return;

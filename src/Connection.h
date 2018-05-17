@@ -10,6 +10,7 @@ NS_BEGIN
 class Connection:
 	public Object
 {
+	friend class Server;
 public:
 	Connection(EventLoop *loop, int fd = INVALID_SOCKET);
 	~Connection();
@@ -21,6 +22,9 @@ public:
 	void			close();
 	bool			isConnected() const { return bConnected;}
 	bool			isClosed() const { return bClosed; }
+	int				fd(){ return sSocket.getFd();}
+	char*			host(){ return sHost;}
+	int				port(){ return nPort;}
 	Socket&			getSocket(){ return sSocket;}
 	Buffer*			getBuffer(){return &readBuffer;}
 	void			setMessageHandler(const EventHandler &cb){ cbRead = cb;}
@@ -32,9 +36,11 @@ public:
 	void*			getContext() const{ return pContext;}
 	void			setHostAndPort(const char *host, short port);
 	int				getError(){ return nError;}
+	void			setSSL(SSL* ssl){ pSSL = ssl;}
 private:
 	void			initSocket();
 	void			initConnectEvent();
+	void			attach();
 	void			onConnect(int fd, int r, void *data);
 	void			onRead(int fd, int r, void *data);
 	void			onWrite(int fd, int r, void *data);
@@ -52,11 +58,13 @@ private:
 	EventHandler	cbConnect;
 	EventHandler	cbWriteComplete;
 	void*			pContext;
-	char			sHost[16];
-	short			nPort;
+	char			sHost[20];
+	int				nPort;
 	int				nTimeout;
 	TimerId			nTimerId;
 	int				nError;
+	bool			bSSL;
+	SSL*			pSSL;
 };
 
 NS_END

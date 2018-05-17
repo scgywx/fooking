@@ -52,6 +52,9 @@ bool Config::load(const char *filename)
 	nWorkers = readInt("WORKER_NUM");
 	sScriptFile = readString("SCRIPT_FILE");
 	nIdleTime = readInt("IDLE_TIME");
+	bSSL = readBoolean("SSL");
+	sSSLCert = readString("SSL_CERT");
+	sSSLPrivKey = readString("SSL_PKEY");
 	if(nMaxBufferSize < 0){
 		printf("MAX_BUFF_SIZE Invalid(MAX_BUFF_SIZE>=0)\n");
 		return false;

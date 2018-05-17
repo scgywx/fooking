@@ -50,7 +50,7 @@ private:
 	//channel process handler
 	void				onPipeMessage(Connection *conn);
 	//client process handler
-	void				onConnection(int fd, int ev, void *data);
+	void				onConnection(Connection *conn);
 	void 				onMessage(Connection *conn);
 	void 				onClose(Connection *conn);
 	//backend process handler
@@ -70,7 +70,7 @@ private:
 private:
 	void				loopBefore(void *data);
 	void				initRouter();
-	void				createClient(int fd, const char *ip, int port);
+	void				createClient(Connection *conn);
 	void 				closeClient(Connection *conn);
 	void				sendToClient(Connection *conn, const char *data, int len);
 	void				sendToClient(Connection *conn, Buffer *msg);

@@ -13,7 +13,9 @@ Connection::Connection(EventLoop *loop, int fd):
 	nPort(0),
 	nTimeout(0),
 	nTimerId(0),
-	nError(0)
+	nError(0),
+	bSSL(false),
+	pSSL(NULL)
 {
 	EV_CB_INIT(cbRead);
 	EV_CB_INIT(cbClose);
@@ -23,24 +25,32 @@ Connection::Connection(EventLoop *loop, int fd):
 	memset(sHost, 0, sizeof(sHost));
 	
 	if(sSocket.isValid()){
-		sSocket.setNonBlock();
 		initSocket();
 	}
 }
 
 Connection::~Connection()
 {
+	if(bSSL){
+		SSL_free(pSSL);
+	}
+	
 	if(!bClosed){
 		close();
 	}
 }
 
+void Connection::attach()
+{
+	pEventLoop->addEventListener(sSocket.getFd(), EV_IO_READ, EV_IO_CB(this, Connection::onRead), NULL);
+}
+
 void Connection::initSocket()
 {
 	bConnected = true;
+	sSocket.setNonBlock();
 	sSocket.setNonDelay();
 	sSocket.setKeepAlive();
-	pEventLoop->addEventListener(sSocket.getFd(), EV_IO_READ, EV_IO_CB(this, Connection::onRead), NULL);
 }
 
 void Connection::initConnectEvent()
@@ -151,6 +161,7 @@ void Connection::onConnect(int fd, int r, void *data)
 	}
 	
 	initSocket();
+	attach();
 	
 	EV_INVOKE(cbConnect, this);
 }
@@ -158,7 +169,21 @@ void Connection::onConnect(int fd, int r, void *data)
 void Connection::onRead(int fd, int r, void *data)
 {
 	char buf[4096];
-	int n = sSocket.read(buf, 4096);
+	int n;
+	
+	if(bSSL){
+		n = SSL_read(pSSL, buf, sizeof(buf));
+		if(n == 0){
+			n = SOCKET_ERR;
+		}else if(n < 0){
+			if(errno != EAGAIN){
+				n = SOCKET_ERR;
+			}
+		}
+	}else{
+		n = sSocket.read(buf, sizeof(buf));
+	}
+	
 	LOG("on read, fd=%d, recv=%d", fd, n);
 	if(n == SOCKET_ERR){
 		nError = sSocket.getError();
@@ -173,7 +198,21 @@ void Connection::onWrite(int fd, int r, void *data)
 {
 	char *buffer = writeBuffer.data();
 	size_t size = writeBuffer.size();
-	int n = sSocket.write(buffer, size);
+	int n;
+	
+	if(bSSL){
+		n = SSL_write(pSSL, buffer, size);
+		if(n == 0){
+			n = SOCKET_ERR;
+		}else if(n < 0){
+			if(errno != EAGAIN){
+				n = SOCKET_ERR;
+			}
+		}
+	}else{
+		n = sSocket.write(buffer, size);
+	}
+	
 	LOG("write to fd=%d, len=%d", fd, n);
 	if(n == SOCKET_ERR){
 		nError = sSocket.getError();

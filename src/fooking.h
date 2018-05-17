@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
+#include <openssl/ssl.h>  
+#include <openssl/err.h>
 
 #define NS_NAME				fooking
 #define NS_BEGIN			namespace NS_NAME{

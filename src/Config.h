@@ -75,5 +75,8 @@ public:
 	std::string			sFastcgiPrefix;//fastcgi参数前缀
 	FastcgiParams		arFastcgiParams;//fastcgi参数列表
 	int					nIdleTime;//空闲时间
+	std::string 		sSSLCert;
+	std::string			sSSLPrivKey;
+	bool				bSSL;
 };
 NS_END

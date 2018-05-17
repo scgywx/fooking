@@ -28,7 +28,7 @@ Worker::~Worker()
 	//TODO
 }
 
-void Worker::createClient(int fd, const char *host, int port)
+void Worker::createClient(Connection *client)
 {
 	//计数更新
 	pMaster->addClient(nId);
@@ -36,21 +36,19 @@ void Worker::createClient(int fd, const char *host, int port)
 	//创建session对像
 	Config *cc = Config::getInstance();
 	Session sess(pMaster->pGlobals->count);
-	LOG("new client, fd=%d, host=%s, port=%d, sid=%s", fd, host, port, sess.getId());
+	LOG("new client, fd=%d, host=%s, port=%d, sid=%s", client->fd(), client->host(), client->port(), sess.getId());
 	
-	//环镜变量
+	//创建ctx
 	ClientContext *ctx = new ClientContext();
 	char szPort[8];
-	int nPort = sprintf(szPort, "%d", port);
+	int nPort = sprintf(szPort, "%d", client->port());
 	ctx->session = sess;
 	ctx->nrequest = 0;
-	pBackend->makeParam(ctx->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, host, strlen(host));
+	pBackend->makeParam(ctx->params, "REMOTE_ADDR", sizeof("REMOTE_ADDR") - 1, client->host(), strlen(client->host()));
 	pBackend->makeParam(ctx->params, "REMOTE_PORT", sizeof("REMOTE_PORT") - 1, szPort, nPort);
 	pBackend->makeParam(ctx->params, "SESSIONID", sizeof("SESSIONID") - 1, sess.getId(), SID_LENGTH, true);
 	
 	//创建连接对像
-	Connection *client = new Connection(pEventLoop, fd);
-	client->setHostAndPort(host, port);
 	client->setContext(ctx);
 	client->setMessageHandler(EV_CB(this, Worker::onMessage));
 	client->setCloseHandler(EV_CB(this, Worker::onClose));
@@ -234,25 +232,15 @@ void Worker::onPipeMessage(Connection *conn)
 	pBuffer->seek(sizeof(PipeMsg) + pMsg->len);
 }
 
-void Worker::onConnection(int fd, int ev, void *data)
+void Worker::onConnection(Connection *conn)
 {
 	//check maxclients
 	Config *pConfig = Config::getInstance();
 	if(pConfig->nMaxClients && pMaster->pGlobals->clients >= pConfig->nMaxClients){
 		LOG("Connection is full");
-		close(fd);
+		conn->close();
 		return ;
 	}
-	
-	//ip and port
-	struct sockaddr_in *pAddr = (struct sockaddr_in*)data;
-	char ip[17]; 
-	int port = ntohs(pAddr->sin_port);
-	memset(ip, 0, sizeof(ip));
-	inet_ntop(AF_INET, &pAddr->sin_addr, ip, 16);
-	
-	//create client
-	createClient(fd, ip, port);
 	
 	//free accept lock
 	if(pMaster->bUseAcceptMutex && 
@@ -262,11 +250,14 @@ void Worker::onConnection(int fd, int ev, void *data)
 		bHeldAcceptLock = false;
 		pServer->stop();
 	}
+	
+	//create client
+	createClient(conn);
 }
 
-void Worker::onClose(Connection *client)
+void Worker::onClose(Connection *conn)
 {
-	closeClient(client);
+	closeClient(conn);
 }
 
 void Worker::onMessage(Connection *client)
@@ -764,8 +755,9 @@ void Worker::proc()
 	pPipe->setMessageHandler(EV_CB(this, Worker::onPipeMessage));
 	
 	//listen server
-	pServer = new Server(pEventLoop, pMaster->pServer->getSocket().getFd());
-	pServer->setConnectionHandler(EV_IO_CB(this, Worker::onConnection));
+	pServer = pMaster->pServer;
+	pServer->setEventLoop(pEventLoop);
+	pServer->setConnectionHandler(EV_CB(this, Worker::onConnection));
 	if(!pMaster->bUseAcceptMutex){
 		pServer->start();
 	}

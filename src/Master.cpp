@@ -67,9 +67,20 @@ void Master::start()
 	}else{
 		return ;
 	}
+	
+	if(cc->bSSL){
+		SSL_library_init();
+		OpenSSL_add_all_algorithms();
+		SSL_load_error_strings();
+	}
 		
 	//create server
 	pServer = new Server(NULL);
+	if(cc->bSSL && !pServer->openSSL(cc->sSSLCert, cc->sSSLPrivKey)){
+		printf("init ssl failed\n");
+		return ;
+	}
+	
 	if(pServer->createTcpServer(cc->nPort) != 0){
 		printf("create tcp server failed, port=%d, errno=%d, errstr=%s\n", 
 			cc->nPort, errno, strerror(errno));
@@ -175,6 +186,7 @@ void Master::setupSignal()
 	
 	signal(SIGHUP, SIG_IGN);
 	signal(SIGPIPE, SIG_IGN);
+	signal(SIGCHLD, SIG_IGN);
 	
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;

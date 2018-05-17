@@ -62,7 +62,7 @@ public:
 	static RouterMsg unpackMsg(void *ptr);
 	static void packMsg(void *ptr, uint16_t type, uint16_t slen, int len);
 private:
-	void onConnection(int fd, int ev, void *data);
+	void onConnection(Connection *conn);
 	void onMessage(Connection *conn);
 	void onClose(Connection *conn);
 	void sendHead(Connection *conn, uint16_t type, uint16_t slen, int len);

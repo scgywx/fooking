@@ -4,6 +4,7 @@
 #include "Socket.h"
 
 NS_BEGIN
+
 class Server:
 	public Object
 {
@@ -15,13 +16,19 @@ public:
 	int 				createUnixServer(const char *path);
 	void				start();
 	void				stop();
-	void 				setConnectionHandler(const IOHandler &cb){ cbConnection = cb;}
+	void 				setConnectionHandler(const EventHandler &cb){ cbConnection = cb;}
 	Socket&				getSocket(){ return sSocket;}
+	bool				openSSL(const std::string &cert, const std::string &pkey);
+	void				setEventLoop(EventLoop *loop){ pLoop = loop;}
 private:
 	void 				onConnection(int fd, int ev, void *data);
+	void				onSSLHandShake(int fd, int ev, void *data);
 private:	
 	EventLoop*			pLoop;
 	Socket				sSocket;
-	IOHandler			cbConnection;
+	EventHandler		cbConnection;
+	bool				bSSL;
+	SSL_CTX*			pSSLCtx;
 };
+
 NS_END

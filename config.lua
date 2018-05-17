@@ -35,6 +35,11 @@ MAX_BUFF_SIZE = 4096;
 ROUTER_HOST = "127.0.0.1";
 ROUTER_PORT = 9010;
 
+--SSL配置
+--SSL = 1
+--SSL_CERT = "/tmp/cert.pem"
+--SSL_PKEY = "/tmp/pkey.pem"
+
 --指定时间内连接没有数据包请求，将会踢掉连接(单位秒),为0不处理
 IDLE_TIME = 0;
 
@@ -59,7 +64,7 @@ EVENT_CLOSE = 1;
 
 --fastcgi params
 FASTCGI_PREFIX = "";--go下要使用HTTP_作为前缀，否则拿不了SESSIONID和EVENT
-FASTCGI_ROOT = "/home/fooking/example/chat/";
+FASTCGI_ROOT = "/home/fooking/example/chat/";--必须以/结尾
 FASTCGI_FILE = "gateway.php";
 FASTCGI_PARAMS = {
 	["SERVER_SOFTWARE"] = "fooking",
