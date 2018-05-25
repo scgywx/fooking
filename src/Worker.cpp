@@ -736,11 +736,6 @@ void Worker::initRouter()
 void Worker::proc()
 {
 	Config *cfg = Config::getInstance();
-	
-	//还原信号默认处理方式
-	signal(SIGTERM, NULL);
-	signal(SIGINT, NULL);
-	signal(SIGUSR1, NULL);
 
 	//set process title
 	utils::setProcTitle("fooking gateway worker");
@@ -753,6 +748,7 @@ void Worker::proc()
 	//pipe event
 	pPipe = new Connection(pEventLoop, arrPipes[1]);
 	pPipe->setMessageHandler(EV_CB(this, Worker::onPipeMessage));
+	pPipe->attach();
 	
 	//listen server
 	pServer = pMaster->pServer;

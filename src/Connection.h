@@ -37,10 +37,10 @@ public:
 	void			setHostAndPort(const char *host, short port);
 	int				getError(){ return nError;}
 	void			setSSL(SSL* ssl){ pSSL = ssl;}
+	void			attach();
 private:
 	void			initSocket();
 	void			initConnectEvent();
-	void			attach();
 	void			onConnect(int fd, int r, void *data);
 	void			onRead(int fd, int r, void *data);
 	void			onWrite(int fd, int r, void *data);
