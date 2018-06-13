@@ -312,7 +312,7 @@ void Worker::onMessage(Connection *client)
 			}
 			
 			//check body
-			if(pBuffer->size() - msgSize < hdrSize){
+			if(pBuffer->size() - hdrSize < msgSize){
 				LOG("package length not enough, msgSize=%u, buffSize=%u", msgSize, pBuffer->size());
 				delete msg;
 				return ;
